@@ -1,4 +1,4 @@
-use std::{fs::File, io::BufReader, path::Path};
+use std::{fs::File, io::BufReader, path::{Path, PathBuf}};
 
 use dlib_face_recognition::{
     FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, ImageMatrix,
@@ -67,48 +67,104 @@ fn euc_dist(a: &[f64], b: &[f64]) -> f64 {
         .sqrt()
 }
 
+use clap::Parser;
+use image::{GrayImage, Luma};
+
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+
+struct Args {
+    dlib_data_dir: PathBuf,
+    #[clap(help="path to data file containing encodings")]
+    encodings_path: PathBuf,
+    camera_num: usize,
+}
+
+impl Args {
+    pub(crate) fn dlib_model_dat(&self, filename: &str) -> PathBuf {
+        let mut file = self.dlib_data_dir.clone();
+        file.push(filename);
+        if !file.exists() {
+            panic!("File not found {}", file.display());
+        }
+        file
+    }
+}
+
 fn main() {
-    let mut args = std::env::args().skip(1);
-    let data_dir = std::path::PathBuf::from(
-        args.next()
-            .expect("First arg should be data dir containing dlib models"),
-    );
-    let models_path = std::path::PathBuf::from(
-        args.next()
-            .expect("Second arg should be path to data file containing encodings"),
-    );
-    let img_path =
-        std::path::PathBuf::from(args.next().expect("Third arg should be path to image file"));
+    let args = Args::parse();
+
+    // let mut args = std::env::args().skip(1);
+    // let data_dir = std::path::PathBuf::from(
+    //     args.next()
+    //         .expect("First arg should be data dir containing dlib models"),
+    // );
+    // let models_path = std::path::PathBuf::from(
+    //     args.next()
+    //         .expect("Second arg should be path to data file containing encodings"),
+    // );
+    // let img_path =
+    //     std::path::PathBuf::from(args.next().expect("Third arg should be path to image file"));
     let _sw = Stopwatch::new("full");
 
     const MAX_DIST: f64 = 0.4;
     let (data, known_encs) = {
         let _sw = Stopwatch::new("read");
 
-        let models = read_encodings(&models_path);
+        let models = read_encodings(&args.encodings_path);
         let (data, known_encs): (Vec<_>, Vec<_>) = models
             .into_iter()
             .map(|m| ((m.label, m.id), m.data))
             .unzip();
         (data, known_encs)
     };
+    let mut cam = rscam::Camera::new("/dev/video2").expect("cam open err");
+    let (format, resolution, interval) = {
+        let mut res = None;
+        let mut format = "GREY".as_bytes() ;
+        for fmt in cam.formats() {
+            let fmti = fmt.expect("fmt");
+            let d = String::from_utf8(fmti.format.to_vec()).expect("asdf");
+            if d != "GREY" {
+                continue;
+            }
+            res = Some(cam.resolutions(&fmti.format).expect("res"));
+        }
+        let resolution = match (res.expect("res")) {
+            rscam::ResolutionInfo::Discretes(v) => v[0],
+            _ => panic!("res"),
+        };
+        let interval = match cam.intervals(&format, resolution).expect("intv") {
+            rscam::IntervalInfo::Discretes(v) => v[0],
+            _ => panic!("intv"),
+        };
+        (format, resolution, interval)
+    };
+    cam.start(&rscam::Config { interval, resolution, format, ..Default::default() }).expect("cam start");
+    // return;
+    // dbg!();
+    // cam.start(rscam::Config::default())
+    
     // let det = {
     //     let _sw = Stopwatch::new("initcnn");
-    //     let mut file = data_dir.clone();
-    //     file.push("mmod_human_face_detector.dat");
+    //     let file = args.dlib_model_dat("mmod_human_face_detector.dat");
     //     FaceDetectorCnn::new(file).expect("cnn erro")
     // };
+
     let fdet = {
         let _sw = Stopwatch::new("initfd");
         FaceDetector::new()
     };
     let img = {
         let _sw = Stopwatch::new("img");
-        let img = image::open(img_path).expect("Unable to open");
-
-        let img = img.resize(1000, 320, image::imageops::FilterType::Nearest);
-
-        img.to_rgb8()
+        // let img = image::open(&args.).expect("Unable to open");
+        let img = cam.capture().expect("frame err");
+        dbg!(&img.resolution);
+        dbg!(&img.len());
+        // let img = image::imageops::resize(&img, 1000, 320, image::imageops::FilterType::Nearest)
+        // img.save_with_format("/home/kroot/Pictures/f1.png", image::ImageFormat::Png).expect("unable to save");
+        let img = image::ImageBuffer::<Luma<u8>,_>::from_raw(img.resolution.0, img.resolution.1, img).expect("img");
+        img
     };
 
     let matrix = ImageMatrix::from_image(&img);
@@ -119,14 +175,12 @@ fn main() {
 
     let pred = {
         let _sw = Stopwatch::new("initpred");
-        let mut file = data_dir.clone();
-        file.push("shape_predictor_5_face_landmarks.dat");
+        let file = args.dlib_model_dat("shape_predictor_5_face_landmarks.dat");
         LandmarkPredictor::new(file).expect("landmark init")
     };
     let enc = {
         let _sw = Stopwatch::new("initenc");
-        let mut file = data_dir.clone();
-        file.push("dlib_face_recognition_resnet_model_v1.dat");
+        let file = args.dlib_model_dat("dlib_face_recognition_resnet_model_v1.dat");
         FaceEncoderNetwork::new(file).expect("initenc")
     };
 
