@@ -1,8 +1,13 @@
-use std::{fs::File, io::BufReader, path::{Path, PathBuf}};
+use std::fs::File;
+use std::io::BufReader;
+use std::path::{Path, PathBuf};
+
+use clap::Parser;
+use image::{buffer::ConvertBuffer, Luma};
 
 use dlib_face_recognition::{
-    FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, ImageMatrix,
-    LandmarkPredictor, LandmarkPredictorTrait,
+    FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncoding,
+    ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait,
 };
 
 struct Stopwatch {
@@ -31,6 +36,7 @@ impl Drop for Stopwatch {
 
 #[derive(Debug)]
 struct ModelData {
+    #[allow(dead_code)]
     time: u64,
     label: String,
     id: u64,
@@ -60,22 +66,11 @@ fn read_encodings(path: &Path) -> Vec<ModelData> {
         .collect()
 }
 
-fn euc_dist(a: &[f64], b: &[f64]) -> f64 {
-    a.iter()
-        .zip(b)
-        .fold(0.0, |acc, (x, y)| acc + (*x - *y).powi(2))
-        .sqrt()
-}
-
-use clap::Parser;
-use image::{GrayImage, Luma};
-
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
-
 struct Args {
     dlib_data_dir: PathBuf,
-    #[clap(help="path to data file containing encodings")]
+    #[clap(help = "path to data file containing encodings")]
     encodings_path: PathBuf,
     camera_num: usize,
 }
@@ -91,20 +86,22 @@ impl Args {
     }
 }
 
+
+#[allow(dead_code)]
+fn write_enc(enc: &FaceEncoding, label: &str, path: &Path) {
+    let v: Vec<f64> = enc.as_ref().into();
+    let out = serde_json::json!([{
+        "time": 0,
+        "label": label,
+        "id": 0,
+        "data": [v],
+    }]);
+    let out = serde_json::to_string(&out).expect("couldn't write json");
+    std::fs::write(path, out).expect("failed to write");
+}
+
 fn main() {
     let args = Args::parse();
-
-    // let mut args = std::env::args().skip(1);
-    // let data_dir = std::path::PathBuf::from(
-    //     args.next()
-    //         .expect("First arg should be data dir containing dlib models"),
-    // );
-    // let models_path = std::path::PathBuf::from(
-    //     args.next()
-    //         .expect("Second arg should be path to data file containing encodings"),
-    // );
-    // let img_path =
-    //     std::path::PathBuf::from(args.next().expect("Third arg should be path to image file"));
     let _sw = Stopwatch::new("full");
 
     const MAX_DIST: f64 = 0.4;
@@ -114,14 +111,19 @@ fn main() {
         let models = read_encodings(&args.encodings_path);
         let (data, known_encs): (Vec<_>, Vec<_>) = models
             .into_iter()
-            .map(|m| ((m.label, m.id), m.data))
+            .map(|m| {
+                (
+                    (m.label, m.id),
+                    FaceEncoding::from_vec(&m.data).expect("Invalid face encoding"),
+                )
+            })
             .unzip();
         (data, known_encs)
     };
     let mut cam = rscam::Camera::new("/dev/video2").expect("cam open err");
     let (format, resolution, interval) = {
         let mut res = None;
-        let mut format = "GREY".as_bytes() ;
+        let format = "GREY".as_bytes();
         for fmt in cam.formats() {
             let fmti = fmt.expect("fmt");
             let d = String::from_utf8(fmti.format.to_vec()).expect("asdf");
@@ -130,21 +132,20 @@ fn main() {
             }
             res = Some(cam.resolutions(&fmti.format).expect("res"));
         }
-        let resolution = match (res.expect("res")) {
+        let resolution = match res.expect("res") {
             rscam::ResolutionInfo::Discretes(v) => v[0],
             _ => panic!("res"),
         };
-        let interval = match cam.intervals(&format, resolution).expect("intv") {
+        let interval = match cam.intervals(format, resolution).expect("intv") {
             rscam::IntervalInfo::Discretes(v) => v[0],
             _ => panic!("intv"),
         };
         (format, resolution, interval)
     };
-    cam.start(&rscam::Config { interval, resolution, format, ..Default::default() }).expect("cam start");
     // return;
     // dbg!();
     // cam.start(rscam::Config::default())
-    
+
     // let det = {
     //     let _sw = Stopwatch::new("initcnn");
     //     let file = args.dlib_model_dat("mmod_human_face_detector.dat");
@@ -157,14 +158,24 @@ fn main() {
     };
     let img = {
         let _sw = Stopwatch::new("img");
+        cam.start(&rscam::Config {
+            interval,
+            resolution,
+            format,
+            ..Default::default()
+        })
+        .expect("cam start");
         // let img = image::open(&args.).expect("Unable to open");
         let img = cam.capture().expect("frame err");
         dbg!(&img.resolution);
         dbg!(&img.len());
         // let img = image::imageops::resize(&img, 1000, 320, image::imageops::FilterType::Nearest)
         // img.save_with_format("/home/kroot/Pictures/f1.png", image::ImageFormat::Png).expect("unable to save");
-        let img = image::ImageBuffer::<Luma<u8>,_>::from_raw(img.resolution.0, img.resolution.1, img).expect("img");
-        img
+        let img =
+            image::ImageBuffer::<Luma<u8>, _>::from_raw(img.resolution.0, img.resolution.1, img)
+                .expect("img");
+        img.convert()
+        // img
     };
 
     let matrix = ImageMatrix::from_image(&img);
@@ -176,12 +187,12 @@ fn main() {
     let pred = {
         let _sw = Stopwatch::new("initpred");
         let file = args.dlib_model_dat("shape_predictor_5_face_landmarks.dat");
-        LandmarkPredictor::new(file).expect("landmark init")
+        LandmarkPredictor::open(file).expect("landmark init")
     };
     let enc = {
         let _sw = Stopwatch::new("initenc");
         let file = args.dlib_model_dat("dlib_face_recognition_resnet_model_v1.dat");
-        FaceEncoderNetwork::new(file).expect("initenc")
+        FaceEncoderNetwork::open(file).expect("initenc")
     };
 
     for l in locs.iter() {
@@ -195,12 +206,14 @@ fn main() {
             enc.get_face_encodings(&matrix, &[lm], 0)
         };
 
+        dbg!(encs.len());
         let idx = {
             let _sw = Stopwatch::new("find");
             let e = encs.first().expect("no face found");
+            // write_enc(e, "enc.data");
             known_encs
                 .iter()
-                .position(|enc| euc_dist(enc, e) <= MAX_DIST)
+                .position(|enc| enc.distance(e) <= MAX_DIST)
         };
         if let Some(idx) = idx {
             println!("Match found: {}!", data[idx].0);

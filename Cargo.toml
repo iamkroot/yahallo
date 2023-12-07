@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dlib-face-recognition = {git="https://github.com/ulagbulag-village/dlib-face-recognition"}
-image = "*"
-serde_json = "*"
+image = "0.24.7"
+serde_json = "1.0.108"
 # nokhwa = {version = "*", features = ["input-v4l", "input-opencv"]}
-rscam = "*"
-clap = {version = "3", features = ["derive"]}
+rscam = "0.5.5"
+clap = {version = "4", features = ["derive"]}
+dlib-face-recognition = "0.3.2"
