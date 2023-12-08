@@ -12,34 +12,6 @@ use dlib_face_recognition::{
     FaceEncoding, ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait,
 };
 
-struct Stopwatch {
-    start: std::time::Instant,
-    name: &'static str,
-}
-
-impl Stopwatch {
-    fn new(name: &'static str) -> Self {
-        Self {
-            name,
-            start: std::time::Instant::now(),
-        }
-    }
-
-    fn time<T, F: FnOnce() -> T>(name: &'static str, func: F) -> T {
-        let _sw = Self::new(name);
-        func()
-    }
-}
-
-impl Drop for Stopwatch {
-    fn drop(&mut self) {
-        println!(
-            "[{}] elapsed {}ms",
-            self.name,
-            self.start.elapsed().as_millis()
-        );
-    }
-}
 
 #[derive(Debug)]
 struct ModelData {
