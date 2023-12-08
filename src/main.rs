@@ -1,13 +1,14 @@
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use clap::Parser;
 use image::{buffer::ConvertBuffer, Luma};
 
 use dlib_face_recognition::{
-    FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncoding,
-    ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait,
+    FaceDetector, FaceDetectorCnn, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait,
+    FaceEncoding, ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait,
 };
 
 struct Stopwatch {
@@ -73,6 +74,8 @@ struct Args {
     #[clap(help = "path to data file containing encodings")]
     encodings_path: PathBuf,
     camera_num: usize,
+    #[clap(long)]
+    use_cnn: bool,
 }
 
 impl Args {
@@ -85,7 +88,6 @@ impl Args {
         file
     }
 }
-
 
 #[allow(dead_code)]
 fn write_enc(enc: &FaceEncoding, label: &str, path: &Path) {
@@ -100,26 +102,7 @@ fn write_enc(enc: &FaceEncoding, label: &str, path: &Path) {
     std::fs::write(path, out).expect("failed to write");
 }
 
-fn main() {
-    let args = Args::parse();
-    let _sw = Stopwatch::new("full");
-
-    const MAX_DIST: f64 = 0.4;
-    let (data, known_encs) = {
-        let _sw = Stopwatch::new("read");
-
-        let models = read_encodings(&args.encodings_path);
-        let (data, known_encs): (Vec<_>, Vec<_>) = models
-            .into_iter()
-            .map(|m| {
-                (
-                    (m.label, m.id),
-                    FaceEncoding::from_vec(&m.data).expect("Invalid face encoding"),
-                )
-            })
-            .unzip();
-        (data, known_encs)
-    };
+fn capture_img() -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
     let mut cam = rscam::Camera::new("/dev/video2").expect("cam open err");
     let (format, resolution, interval) = {
         let mut res = None;
@@ -142,42 +125,67 @@ fn main() {
         };
         (format, resolution, interval)
     };
-    // return;
-    // dbg!();
-    // cam.start(rscam::Config::default())
 
-    // let det = {
-    //     let _sw = Stopwatch::new("initcnn");
-    //     let file = args.dlib_model_dat("mmod_human_face_detector.dat");
-    //     FaceDetectorCnn::new(file).expect("cnn erro")
-    // };
-
-    let fdet = {
-        let _sw = Stopwatch::new("initfd");
-        FaceDetector::new()
-    };
+    cam.start(&rscam::Config {
+        interval,
+        resolution,
+        format,
+        ..Default::default()
+    })
+    .expect("cam start");
     let img = {
         let _sw = Stopwatch::new("img");
-        cam.start(&rscam::Config {
-            interval,
-            resolution,
-            format,
-            ..Default::default()
-        })
-        .expect("cam start");
         // let img = image::open(&args.).expect("Unable to open");
         let img = cam.capture().expect("frame err");
         dbg!(&img.resolution);
         dbg!(&img.len());
-        // let img = image::imageops::resize(&img, 1000, 320, image::imageops::FilterType::Nearest)
         // img.save_with_format("/home/kroot/Pictures/f1.png", image::ImageFormat::Png).expect("unable to save");
         let img =
             image::ImageBuffer::<Luma<u8>, _>::from_raw(img.resolution.0, img.resolution.1, img)
                 .expect("img");
+        let img = image::imageops::resize(&img, 320, 180, image::imageops::FilterType::Nearest);
         img.convert()
         // img
     };
+    cam.stop().expect("cam stop");
+    img
+}
 
+fn make_fdet(args: &Args) -> Box<dyn FaceDetectorTrait> {
+    let _sw = Stopwatch::new("initfd");
+    if args.use_cnn {
+        Box::new(
+            FaceDetectorCnn::open(args.dlib_model_dat("mmod_human_face_detector.dat"))
+                .expect("cnn open failure"),
+        )
+    } else {
+        Box::new(FaceDetector::new())
+    }
+}
+
+fn main() -> ExitCode {
+    let args = Args::parse();
+    let _sw = Stopwatch::new("full");
+
+    const MAX_DIST: f64 = 0.4;
+    let (data, known_encs) = {
+        let _sw = Stopwatch::new("read");
+
+        let models = read_encodings(&args.encodings_path);
+        let (data, known_encs): (Vec<_>, Vec<_>) = models
+            .into_iter()
+            .map(|m| {
+                (
+                    (m.label, m.id),
+                    FaceEncoding::from_vec(&m.data).expect("Invalid face encoding"),
+                )
+            })
+            .unzip();
+        (data, known_encs)
+    };
+
+    let fdet = make_fdet(&args);
+    let img = capture_img();
     let matrix = ImageMatrix::from_image(&img);
     let locs = {
         let _sw = Stopwatch::new("FDet");
@@ -195,28 +203,32 @@ fn main() {
         FaceEncoderNetwork::open(file).expect("initenc")
     };
 
-    for l in locs.iter() {
-        let lm = {
-            let _sw = Stopwatch::new("lm");
-            pred.face_landmarks(&matrix, l)
-        };
+    let Some(l) = locs.first() else {
+        return ExitCode::FAILURE;
+    };
+    let lm = {
+        let _sw = Stopwatch::new("lm");
+        pred.face_landmarks(&matrix, l)
+    };
 
-        let encs = {
-            let _sw = Stopwatch::new("enc");
-            enc.get_face_encodings(&matrix, &[lm], 0)
-        };
+    let encs = {
+        let _sw = Stopwatch::new("enc");
+        enc.get_face_encodings(&matrix, &[lm], 0)
+    };
 
-        dbg!(encs.len());
-        let idx = {
-            let _sw = Stopwatch::new("find");
-            let e = encs.first().expect("no face found");
-            // write_enc(e, "enc.data");
-            known_encs
-                .iter()
-                .position(|enc| enc.distance(e) <= MAX_DIST)
-        };
-        if let Some(idx) = idx {
-            println!("Match found: {}!", data[idx].0);
-        }
+    dbg!(encs.len());
+    let idx = {
+        let _sw = Stopwatch::new("find");
+        let e = encs.first().expect("no face found");
+        // write_enc(e, "enc.data");
+        known_encs
+            .iter()
+            .position(|enc| enc.distance(e) <= MAX_DIST)
+    };
+    if let Some(idx) = idx {
+        println!("Match found: {}!", data[idx].0);
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
     }
 }
