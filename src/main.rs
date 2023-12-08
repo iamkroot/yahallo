@@ -25,7 +25,7 @@ impl Stopwatch {
         }
     }
 
-    fn time<T, F: FnOnce()-> T>(name: &'static str, func: F) -> T {
+    fn time<T, F: FnOnce() -> T>(name: &'static str, func: F) -> T {
         let _sw = Self::new(name);
         func()
     }
@@ -50,7 +50,6 @@ struct ModelData {
     // data: Array1<f64>,
     data: Vec<f64>,
 }
-
 
 struct FDet(Box<dyn FaceDetectorTrait>);
 
@@ -109,7 +108,7 @@ impl Args {
 }
 
 #[allow(dead_code)]
-fn write_enc(enc: &FaceEncoding, label: &str, path: &Path) {
+fn write_enc(enc: &FaceEncoding, label: &str, path: impl AsRef<Path>) {
     let v: Vec<f64> = enc.as_ref().into();
     let out = serde_json::json!([{
         "time": 0,
@@ -130,11 +129,10 @@ fn capture_img() -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
         let format = "GREY".as_bytes();
         for fmt in cam.formats() {
             let fmti = fmt.expect("fmt");
-            let d = String::from_utf8(fmti.format.to_vec()).expect("asdf");
-            if d != "GREY" {
-                continue;
+            if &fmti.format == b"GREY" {
+                res = Some(cam.resolutions(&fmti.format).expect("res"));
+                break;
             }
-            res = Some(cam.resolutions(&fmti.format).expect("res"));
         }
         let resolution = match res.expect("res") {
             rscam::ResolutionInfo::Discretes(v) => v[0],
@@ -147,13 +145,15 @@ fn capture_img() -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
         (format, resolution, interval)
     };
 
-    Stopwatch::time("camstart", || cam.start(&rscam::Config {
-        interval,
-        resolution,
-        format,
-        ..Default::default()
-    })
-    .expect("cam start"));
+    Stopwatch::time("camstart", || {
+        cam.start(&rscam::Config {
+            interval,
+            resolution,
+            format,
+            ..Default::default()
+        })
+        .expect("cam start")
+    });
     let img = {
         let _sw = Stopwatch::new("img");
         // let img = image::open(&args.).expect("Unable to open");
@@ -188,7 +188,7 @@ fn main() -> ExitCode {
     let args = Arc::new(Args::parse());
     let _sw = Stopwatch::new("full");
 
-    const MAX_DIST: f64 = 0.4;
+    const MAX_DIST: f64 = 0.6;
     let (data, known_encs) = {
         let _sw = Stopwatch::new("read");
 
@@ -206,19 +206,19 @@ fn main() -> ExitCode {
     };
 
     let args0 = args.clone();
-    let fdet = std::thread::spawn(move|| make_fdet(&args0));
-    
+    let fdet = std::thread::spawn(move || make_fdet(&args0));
+
     let img = capture_img();
     let matrix = Stopwatch::time("mat", || ImageMatrix::from_image(&img));
 
     let args2 = args.clone();
     let args3 = args.clone();
-    let pred =move  || {
+    let pred = move || {
         let _sw = Stopwatch::new("initpred");
         let file = args2.dlib_model_dat("shape_predictor_5_face_landmarks.dat");
         LandmarkPredictor::open(file).expect("landmark init")
     };
-    let enc =move || {
+    let enc = move || {
         let _sw = Stopwatch::new("initenc");
         let file = args3.dlib_model_dat("dlib_face_recognition_resnet_model_v1.dat");
         FaceEncoderNetwork::open(file).expect("initenc")
@@ -252,7 +252,7 @@ fn main() -> ExitCode {
     let idx = {
         let _sw = Stopwatch::new("find");
         let e = encs.first().expect("no face found");
-        // write_enc(e, "enc.data");
+        // write_enc(e, "kroot1", "enc2.data");
         known_encs
             .iter()
             .position(|enc| enc.distance(e) <= MAX_DIST)
