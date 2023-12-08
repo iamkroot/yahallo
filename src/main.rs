@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use clap::Parser;
 use image::{buffer::ConvertBuffer, Luma};
@@ -22,6 +23,11 @@ impl Stopwatch {
             name,
             start: std::time::Instant::now(),
         }
+    }
+
+    fn time<T, F: FnOnce()-> T>(name: &'static str, func: F) -> T {
+        let _sw = Self::new(name);
+        func()
     }
 }
 
@@ -44,6 +50,19 @@ struct ModelData {
     // data: Array1<f64>,
     data: Vec<f64>,
 }
+
+
+struct FDet(Box<dyn FaceDetectorTrait>);
+
+impl std::ops::Deref for FDet {
+    type Target = Box<dyn FaceDetectorTrait>;
+
+    fn deref(&self) -> &Self::Target {
+        // todo!()
+        &self.0
+    }
+}
+unsafe impl Send for FDet {}
 
 fn read_encodings(path: &Path) -> Vec<ModelData> {
     let f = File::open(path).expect("read enc");
@@ -103,6 +122,8 @@ fn write_enc(enc: &FaceEncoding, label: &str, path: &Path) {
 }
 
 fn capture_img() -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
+    let _sw = Stopwatch::new("capture");
+
     let mut cam = rscam::Camera::new("/dev/video2").expect("cam open err");
     let (format, resolution, interval) = {
         let mut res = None;
@@ -126,13 +147,13 @@ fn capture_img() -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
         (format, resolution, interval)
     };
 
-    cam.start(&rscam::Config {
+    Stopwatch::time("camstart", || cam.start(&rscam::Config {
         interval,
         resolution,
         format,
         ..Default::default()
     })
-    .expect("cam start");
+    .expect("cam start"));
     let img = {
         let _sw = Stopwatch::new("img");
         // let img = image::open(&args.).expect("Unable to open");
@@ -147,24 +168,24 @@ fn capture_img() -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
         img.convert()
         // img
     };
-    cam.stop().expect("cam stop");
+    std::thread::spawn(move || cam.stop().expect("cam stop"));
     img
 }
 
-fn make_fdet(args: &Args) -> Box<dyn FaceDetectorTrait> {
+fn make_fdet(args: &Args) -> FDet {
     let _sw = Stopwatch::new("initfd");
     if args.use_cnn {
-        Box::new(
+        FDet(Box::new(
             FaceDetectorCnn::open(args.dlib_model_dat("mmod_human_face_detector.dat"))
                 .expect("cnn open failure"),
-        )
+        ))
     } else {
-        Box::new(FaceDetector::new())
+        FDet(Box::new(FaceDetector::new()))
     }
 }
 
 fn main() -> ExitCode {
-    let args = Args::parse();
+    let args = Arc::new(Args::parse());
     let _sw = Stopwatch::new("full");
 
     const MAX_DIST: f64 = 0.4;
@@ -184,32 +205,43 @@ fn main() -> ExitCode {
         (data, known_encs)
     };
 
-    let fdet = make_fdet(&args);
+    let args0 = args.clone();
+    let fdet = std::thread::spawn(move|| make_fdet(&args0));
+    
     let img = capture_img();
-    let matrix = ImageMatrix::from_image(&img);
+    let matrix = Stopwatch::time("mat", || ImageMatrix::from_image(&img));
+
+    let args2 = args.clone();
+    let args3 = args.clone();
+    let pred =move  || {
+        let _sw = Stopwatch::new("initpred");
+        let file = args2.dlib_model_dat("shape_predictor_5_face_landmarks.dat");
+        LandmarkPredictor::open(file).expect("landmark init")
+    };
+    let enc =move || {
+        let _sw = Stopwatch::new("initenc");
+        let file = args3.dlib_model_dat("dlib_face_recognition_resnet_model_v1.dat");
+        FaceEncoderNetwork::open(file).expect("initenc")
+    };
+    let pred_t = std::thread::spawn(pred);
+    let enc_t = std::thread::spawn(enc);
+
+    let fdet = fdet.join().expect("fdet join");
     let locs = {
         let _sw = Stopwatch::new("FDet");
         fdet.face_locations(&matrix)
     };
 
-    let pred = {
-        let _sw = Stopwatch::new("initpred");
-        let file = args.dlib_model_dat("shape_predictor_5_face_landmarks.dat");
-        LandmarkPredictor::open(file).expect("landmark init")
-    };
-    let enc = {
-        let _sw = Stopwatch::new("initenc");
-        let file = args.dlib_model_dat("dlib_face_recognition_resnet_model_v1.dat");
-        FaceEncoderNetwork::open(file).expect("initenc")
-    };
-
     let Some(l) = locs.first() else {
         return ExitCode::FAILURE;
     };
+    let pred = pred_t.join().expect("pred join");
+
     let lm = {
         let _sw = Stopwatch::new("lm");
         pred.face_landmarks(&matrix, l)
     };
+    let enc = enc_t.join().expect("enc join");
 
     let encs = {
         let _sw = Stopwatch::new("enc");
