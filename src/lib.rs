@@ -3,7 +3,9 @@ use dlib_face_recognition::{
     FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncodings, FaceLocations,
     ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait,
 };
-mod utils;
+
+mod camera;
+mod config;
 pub mod pam_handler;
 mod utils;
 
