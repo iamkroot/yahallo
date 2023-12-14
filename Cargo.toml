@@ -12,6 +12,7 @@ rscam = "0.5.5"
 clap = { version = "4", features = ["derive"] }
 dlib-face-recognition = "0.3.2"
 libc = "0.2.150"
+anyhow = "1.0.75"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
