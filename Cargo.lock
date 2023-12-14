@@ -441,19 +441,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mukhda"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "dlib-face-recognition",
- "image",
- "libc",
- "rscam",
- "serde_json",
-]
-
-[[package]]
 name = "num-integer"
 version = "0.1.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -772,6 +759,19 @@ name = "windows_x86_64_msvc"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dff9641d1cd4be8d1a070daf9e3773c5f67e78b4d9d42263020c057706765c04"
+
+[[package]]
+name = "yahallo"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dlib-face-recognition",
+ "image",
+ "libc",
+ "rscam",
+ "serde_json",
+]
 
 [[package]]
 name = "zune-inflate"
