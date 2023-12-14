@@ -4,7 +4,7 @@ use dlib_face_recognition::{
     ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait,
 };
 
-mod camera;
+pub mod camera;
 mod config;
 pub mod pam_handler;
 mod utils;

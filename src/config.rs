@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 #[derive(Debug)]
-pub(crate) struct Config {
-    camera_path: PathBuf,
+pub struct Config {
+    pub(crate) camera_path: PathBuf,
     // Could use the "embed-nn" feature of dlib to avoid this.
     // To get a completely independent binary, we would also have to enable the "build-native" flag of dlib
     dlib_model_dir: PathBuf,
