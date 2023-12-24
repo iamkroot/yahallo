@@ -4,10 +4,12 @@ use dlib_face_recognition::{
     FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncodings,
     FaceLocations, ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait,
 };
+use image::buffer::ConvertBuffer;
+use rscam::Frame;
 
 pub mod camera;
-mod config;
-mod data;
+pub mod config;
+pub mod data;
 pub mod pam_handler;
 mod utils;
 
@@ -60,7 +62,7 @@ impl FaceRecognizer {
         })
     }
 
-    fn gen_encodings(&self, matrix: &ImageMatrix) -> Result<FaceEncodings> {
+    pub fn gen_encodings(&self, matrix: &ImageMatrix) -> Result<FaceEncodings> {
         let locs = self.fdet.face_locations(matrix);
         if locs.len() > 1 {
             anyhow::bail!("Expected just one face, found {}", locs.len());
@@ -86,4 +88,16 @@ impl FaceRecognizer {
             .check_match(encoding, config.match_threshold)
             .is_some())
     }
+}
+
+pub fn convert_image(frame: Frame) -> Result<ImageMatrix> {
+    let img = image::ImageBuffer::<image::Luma<u8>, _>::from_raw(
+        frame.resolution.0,
+        frame.resolution.1,
+        frame,
+    )
+    .expect("img");
+    let img = image::imageops::resize(&img, 320, 180, image::imageops::FilterType::Nearest);
+    let img = img.convert();
+    Ok(ImageMatrix::from_image(&img))
 }

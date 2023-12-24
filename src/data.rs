@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
-use anyhow::{anyhow, Context, Result, Ok};
+use anyhow::{anyhow, Context, Ok, Result};
 use dlib_face_recognition::FaceEncoding;
 use serde_json::json;
 
@@ -18,6 +18,15 @@ pub struct ModelData {
 }
 
 impl ModelData {
+    pub fn new(time: u64, label: String, id: FaceId, data: FaceEncoding) -> Self {
+        Self {
+            time,
+            label,
+            id,
+            data,
+        }
+    }
+
     fn from_json(v: &serde_json::Value) -> Result<Self> {
         Ok(ModelData {
             time: v["time"]
@@ -103,7 +112,11 @@ impl Faces {
         Ok(())
     }
 
-    pub(crate) fn check_match(&self, encoding: &FaceEncoding, threshold: f64) -> Option<&ModelData> {
+    pub(crate) fn check_match(
+        &self,
+        encoding: &FaceEncoding,
+        threshold: f64,
+    ) -> Option<&ModelData> {
         self.0
             .iter()
             .find(|known| known.encoding().distance(encoding) >= threshold)

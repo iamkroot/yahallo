@@ -1,6 +1,6 @@
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 
 #[derive(Debug)]
 pub struct Config {
@@ -14,6 +14,20 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn new(
+        camera_path: PathBuf,
+        dlib_model_dir: PathBuf,
+        data_dir: PathBuf,
+        match_threshold: f64,
+    ) -> Self {
+        Self {
+            camera_path,
+            dlib_model_dir,
+            data_dir,
+            match_threshold,
+        }
+    }
+
     pub(crate) fn dlib_model_dat(&self, filename: &str) -> Result<PathBuf> {
         let file = self.dlib_model_dir.join(filename);
         if !file.exists() {
