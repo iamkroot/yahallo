@@ -30,4 +30,9 @@ impl Config {
     pub fn camera_path(&self) -> &Path {
         &self.camera_path
     }
+
+    pub(crate) fn faces_file(&self) -> PathBuf {
+        // TODO: Can allow user to specify this directly instead of assuming it is inside data dir
+        self.data_dir().join("faces.json")
+    }
 }

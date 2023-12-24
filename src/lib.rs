@@ -1,35 +1,65 @@
-use anyhow::{Ok, Result};
+use anyhow::Result;
+use data::Faces;
 use dlib_face_recognition::{
-    FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncodings, FaceLocations,
-    ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait,
+    FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncodings,
+    FaceLocations, ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait,
 };
 
 pub mod camera;
 mod config;
+mod data;
 pub mod pam_handler;
 mod utils;
 
 use crate::config::Config;
 
-struct FaceDetector(Box<dyn FaceDetectorTrait>);
+struct FaceDet(Box<dyn FaceDetectorTrait>);
 
-impl FaceDetectorTrait for FaceDetector {
+impl FaceDetectorTrait for FaceDet {
     fn face_locations(&self, image: &dlib_face_recognition::ImageMatrix) -> FaceLocations {
         self.0.face_locations(image)
     }
 }
 
-unsafe impl Send for FaceDetector {}
+unsafe impl Send for FaceDet {}
 
-struct FaceRecognizer {
-    fdet: FaceDetector,
+pub struct FaceRecognizer {
+    fdet: FaceDet,
     lm_pred: LandmarkPredictor,
     encoder: FaceEncoderNetwork,
-    // TODO: Also store metadata about the known faces
-    known_faces: FaceEncodings,
+    known_faces: Faces,
 }
 
 impl FaceRecognizer {
+    pub fn new(config: &Config) -> Result<Self> {
+        let fdt = std::thread::spawn(FaceDetector::new);
+        let lm_path = config.dlib_model_dat("shape_predictor_5_face_landmarks.dat")?;
+        let lmt = std::thread::spawn(move || LandmarkPredictor::open(lm_path));
+        let enc_path = config.dlib_model_dat("dlib_face_recognition_resnet_model_v1.dat")?;
+        let ent = std::thread::spawn(move || FaceEncoderNetwork::open(enc_path));
+        let fdet = fdt
+            .join()
+            // TODO: Print the panics properly instead of ignoring them
+            .map_err(|_| anyhow::format_err!("FDet init failed!"))?;
+        let lm_pred = lmt
+            .join()
+            .map_err(|_| anyhow::format_err!("LMPred init failed!"))?
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let encoder = ent
+            .join()
+            .map_err(|_| anyhow::format_err!("Enc init failed!"))?
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let faces_file = config.faces_file();
+        let encs = Faces::from_file(&faces_file)?;
+        Ok(Self {
+            fdet: FaceDet(Box::new(fdet)),
+            lm_pred,
+            encoder,
+            known_faces: encs,
+        })
+    }
+
     fn gen_encodings(&self, matrix: &ImageMatrix) -> Result<FaceEncodings> {
         let locs = self.fdet.face_locations(matrix);
         if locs.len() > 1 {
@@ -53,7 +83,7 @@ impl FaceRecognizer {
         // TODO: Return more info about the match
         Ok(self
             .known_faces
-            .iter()
-            .any(|known| known.distance(encoding) >= config.match_threshold))
+            .check_match(encoding, config.match_threshold)
+            .is_some())
     }
 }
