@@ -13,6 +13,8 @@ clap = { version = "4", features = ["derive"] }
 dlib-face-recognition = "0.3.2"
 libc = "0.2.150"
 anyhow = "1.0.75"
+humantime = "2.1.0"
+log = "0.4.20"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

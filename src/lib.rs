@@ -2,7 +2,7 @@ use anyhow::Result;
 use data::Faces;
 use dlib_face_recognition::{
     FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncodings,
-    FaceLocations, ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait,
+    FaceLocations, ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait, Rectangle,
 };
 use image::buffer::ConvertBuffer;
 use rscam::Frame;
@@ -62,18 +62,28 @@ impl FaceRecognizer {
         })
     }
 
-    pub fn gen_encodings(&self, matrix: &ImageMatrix) -> Result<FaceEncodings> {
+    /// Returns largest face rect on image, if it is available
+    pub fn get_face_rect(&self, matrix: &ImageMatrix) -> Result<Option<Rectangle>> {
+        // TODO: Actually return the largest :P
         let locs = self.fdet.face_locations(matrix);
         if locs.len() > 1 {
             anyhow::bail!("Expected just one face, found {}", locs.len());
         }
-        let Some(rect) = locs.first() else {
-            anyhow::bail!("No faces detected!");
-        };
+        Ok(locs.first().cloned())
+    }
 
+    pub fn gen_encodings(&self, matrix: &ImageMatrix) -> Result<FaceEncodings> {
+        let rect = &self
+            .get_face_rect(matrix)?
+            .ok_or_else(|| anyhow::anyhow!("No faces detected!"))?;
         let landmarks = self.lm_pred.face_landmarks(matrix, rect);
         let encodings = self.encoder.get_face_encodings(matrix, &[landmarks], 0);
         Ok(encodings)
+    }
+
+    pub fn gen_encodings_with_rect(&self, matrix: &ImageMatrix, rect: &Rectangle) -> FaceEncodings {
+        let landmarks = self.lm_pred.face_landmarks(matrix, rect);
+        self.encoder.get_face_encodings(matrix, &[landmarks], 0)
     }
 
     pub fn check_match(&self, matrix: &ImageMatrix, config: &Config) -> Result<bool> {
