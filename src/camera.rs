@@ -1,9 +1,12 @@
+use std::time::Duration;
 use std::path::Path;
+use std::num::NonZeroU32;
 
 use anyhow::{anyhow, bail, Context, Result};
 
 pub struct Cam {
     cam: rscam::Camera,
+    config: rscam::Config<'static>,
 }
 
 impl Cam {
@@ -15,7 +18,19 @@ impl Cam {
         let mut cam = rscam::Camera::new(device).context("cam open err")?;
         let rscam_config = Self::configure(&cam)?;
         cam.start(&rscam_config)?;
-        Ok(Self { cam })
+        Ok(Self {
+            cam,
+            config: rscam_config,
+        })
+    }
+
+    pub fn interval(&self) -> Duration {
+        Duration::from_secs_f64(self.config.interval.0 as f64 / self.config.interval.1 as f64)
+    }
+
+    pub fn resolution(&self) -> Result<(NonZeroU32, NonZeroU32)> {
+        let (w, h) = self.config.resolution;
+        Ok((w.try_into()?, h.try_into()?))
     }
 
     fn configure(cam: &rscam::Camera) -> Result<rscam::Config<'static>> {

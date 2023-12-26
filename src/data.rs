@@ -1,8 +1,9 @@
+use std::fmt::format;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, ErrorKind};
 use std::path::Path;
 
-use anyhow::{anyhow, Context, Ok, Result};
+use anyhow::{anyhow, Context, Result};
 use dlib_face_recognition::FaceEncoding;
 use serde_json::json;
 
@@ -81,7 +82,16 @@ pub(crate) struct Faces(Vec<ModelData>);
 impl Faces {
     /// Parse the faces.json file
     pub(crate) fn from_file(path: &Path) -> Result<Self> {
-        let f = File::open(path).context("read enc")?;
+        let f = match File::open(path) {
+            Ok(f) => f,
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                // make new file
+                std::fs::write(path, "[]")
+                    .with_context(|| format!("couldn't create {}", path.display()))?;
+                return Ok(Self(vec![]));
+            }
+            r => r.with_context(|| format!("{} not found", path.display()))?,
+        };
         let rdr = BufReader::new(f);
         let encs: serde_json::Value = serde_json::from_reader(rdr).context("read json")?;
         let a = encs

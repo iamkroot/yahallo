@@ -106,7 +106,7 @@ pub fn convert_image(frame: Frame) -> Result<ImageMatrix> {
         frame.resolution.1,
         frame,
     )
-    .expect("img");
+    .ok_or(anyhow::anyhow!("no img from cam frame"))?;
     let img = image::imageops::resize(&img, 320, 180, image::imageops::FilterType::Nearest);
     let img = img.convert();
     Ok(ImageMatrix::from_image(&img))
