@@ -97,7 +97,8 @@ fn handle_add(
 ) -> anyhow::Result<()> {
     let mut cam = Cam::start(config.camera_path())?;
     let (width, height) = cam.resolution()?;
-    // let duration = duration.map(|d| d.into());
+    let duration = duration.map(|d| d.into());
+    let start = Instant::now();
     let event_loop = EventLoop::new().unwrap();
     let window = Rc::new(
         WindowBuilder::new()
@@ -114,36 +115,46 @@ fn handle_add(
     let mut surface = softbuffer::Surface::new(&context, window.clone()).unwrap();
     surface.resize(width, height).unwrap();
     event_loop.listen_device_events(winit::event_loop::DeviceEvents::Never);
-    event_loop.run(move |evt, elwt| match evt {
-        Event::WindowEvent {
-            event: WindowEvent::RedrawRequested,
-            ..
+    event_loop.run(move |evt, elwt| {
+        if let Some(dur) = duration {
+            if start.elapsed() >= dur {
+                warn!("Timeout trying to detect face!");
+                elwt.exit();
+                return;
+            }
         }
-        | Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
-            let mut buffer = surface.buffer_mut().unwrap();
-            let next_frame_at = redraw(&mut buffer, &fr, &mut cam).expect("failed to draw");
-            buffer.present().unwrap();
-            elwt.set_control_flow(winit::event_loop::ControlFlow::wait_duration(
-                next_frame_at - Instant::now(),
-            ));
-        }
-        Event::WindowEvent {
-            event:
-                WindowEvent::CloseRequested
-                | WindowEvent::KeyboardInput {
-                    event:
-                        KeyEvent {
-                            logical_key: Key::Named(NamedKey::Escape),
-                            ..
-                        },
-                    ..
-                },
-            window_id,
-        } if window_id == window.id() => {
-            elwt.exit();
-        }
-        _ => {
-            debug!("other event {evt:?}")
+        match evt {
+            Event::WindowEvent {
+                event: WindowEvent::RedrawRequested,
+                ..
+            }
+            | Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
+                let mut buffer = surface.buffer_mut().unwrap();
+                let next_frame_at = redraw(&mut buffer, &fr, &mut cam).expect("failed to draw");
+                buffer.present().unwrap();
+                // window.request_redraw();
+                elwt.set_control_flow(winit::event_loop::ControlFlow::wait_duration(
+                    next_frame_at - Instant::now(),
+                ));
+            }
+            Event::WindowEvent {
+                event:
+                    WindowEvent::CloseRequested
+                    | WindowEvent::KeyboardInput {
+                        event:
+                            KeyEvent {
+                                logical_key: Key::Named(NamedKey::Escape),
+                                ..
+                            },
+                        ..
+                    },
+                window_id,
+            } if window_id == window.id() => {
+                elwt.exit();
+            }
+            _ => {
+                debug!("other event {evt:?}")
+            }
         }
     })?;
     // loop {
