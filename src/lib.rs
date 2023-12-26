@@ -100,14 +100,32 @@ impl FaceRecognizer {
     }
 }
 
-pub fn convert_image(frame: Frame) -> Result<ImageMatrix> {
+// pub fn convert_image(frame: Frame) -> Result<ImageMatrix> {
+//     let img = image::ImageBuffer::<image::Luma<u8>, _>::from_raw(
+//         frame.resolution.0,
+//         frame.resolution.1,
+//         frame,
+//     )
+//     .ok_or(anyhow::anyhow!("no img from cam frame"))?;
+//     let img = image::imageops::resize(&img, 320, 180, image::imageops::FilterType::Nearest);
+//     let img = img.convert();
+//     Ok(ImageMatrix::from_image(&img))
+// }
+
+type RgbImage = image::ImageBuffer<image::Rgb<u8>, Vec<u8>>;
+
+/// Convert the frame into an rgb image
+pub fn process_image(frame: Frame) -> Result<RgbImage> {
     let img = image::ImageBuffer::<image::Luma<u8>, _>::from_raw(
         frame.resolution.0,
         frame.resolution.1,
         frame,
     )
     .ok_or(anyhow::anyhow!("no img from cam frame"))?;
-    let img = image::imageops::resize(&img, 320, 180, image::imageops::FilterType::Nearest);
-    let img = img.convert();
+    Ok(img.convert())
+}
+
+pub fn img_to_dlib(img: &image::ImageBuffer<image::Rgb<u8>, Vec<u8>>) -> Result<ImageMatrix> {
+    let img = image::imageops::resize(img, 320, 180, image::imageops::FilterType::Nearest);
     Ok(ImageMatrix::from_image(&img))
 }

@@ -4,16 +4,17 @@ use std::time::{Duration, Instant};
 
 use anyhow::Ok;
 use clap::Parser;
+use dlib_face_recognition::{ImageMatrix, Rectangle};
 use image::buffer::ConvertBuffer;
 use log::{debug, info, warn};
 use winit::event::{Event, KeyEvent, StartCause, WindowEvent};
-use winit::event_loop::EventLoop;
+use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowBuilder;
 use yahallo::camera::Cam;
 use yahallo::config::Config;
 use yahallo::data::ModelData;
-use yahallo::{convert_image, FaceRecognizer};
+use yahallo::{process_image, FaceRecognizer};
 
 #[derive(Debug, Parser, Clone)]
 #[command(name = "yahallo")]
@@ -62,27 +63,52 @@ fn main() -> anyhow::Result<()> {
     }
     Ok(())
 }
+const RED: u32 = u32::from_be_bytes([0, 255, 0, 0]);
 
 fn redraw(buffer: &mut [u32], fr: &FaceRecognizer, cam: &mut Cam) -> anyhow::Result<Instant> {
     let frame = cam.capture()?;
     let start = Instant::now();
     let next_frame_at = start + cam.interval();
-    let img: image::ImageBuffer<image::Rgb<u8>, _> =
-        image::ImageBuffer::<image::Luma<u8>, _>::from_raw(
-            frame.resolution.0,
-            frame.resolution.1,
-            frame,
-        )
-        .expect("img")
-        .convert();
-    // let matrix = convert_image(frame)?;
-    // let Some(rect) = fr.get_face_rect(&matrix)? else {
-    //     info!("No face in frame");
-    //     return Ok(next_frame_at);
-    // };
+    let aspect_ratio = frame.resolution.0 as f64 / frame.resolution.1 as f64;
+
+    const WIDTH: f64 = 320.0;
+    let scale = frame.resolution.0 as f64 / WIDTH;
+    let img = process_image(frame)?;
+    // let matrix = img_to_dlib(&img)?;
+    let resized = image::imageops::resize(
+        &img,
+        WIDTH as u32,
+        (WIDTH / aspect_ratio) as u32,
+        image::imageops::FilterType::Nearest,
+    );
+    let matrix = ImageMatrix::from_image(&resized);
+    let Some(rect) = fr.get_face_rect(&matrix)? else {
+        info!("No face in frame");
+        // TODO: Do we want to skip this?
+        for (i, p) in img.pixels().enumerate() {
+            buffer[i] = u32::from_be_bytes([0, p.0[0], p.0[1], p.0[2]]);
+        }
+        return Ok(next_frame_at);
+    };
+    // upscale the rect to orig image size
+    let rect = Rectangle {
+        left: (rect.left as f64 * scale) as i64,
+        top: (rect.top as f64 * scale) as i64,
+        right: (rect.right as f64 * scale) as i64,
+        bottom: (rect.bottom as f64 * scale) as i64,
+    };
     debug!("writing pixels!");
-    for (i, p) in img.pixels().enumerate() {
-        let v = u32::from_be_bytes([0, p.0[0], p.0[1], p.0[2]]);
+    for (i, (c, r, p)) in img.enumerate_pixels().enumerate() {
+        let r = r as i64;
+        let c = c as i64;
+        let v = if ((r == rect.top || r == rect.bottom) && (c >= rect.left && c <= rect.right))
+            || ((c == rect.left || c == rect.right) && (r >= rect.top && r <= rect.bottom))
+        {
+            // Draw rect boundary in red
+            RED
+        } else {
+            u32::from_be_bytes([0, p.0[0], p.0[1], p.0[2]])
+        };
         buffer[i] = v;
         // let v: u32 = p.into();
     }
@@ -127,15 +153,14 @@ fn handle_add(
             Event::WindowEvent {
                 event: WindowEvent::RedrawRequested,
                 ..
-            }
-            | Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
+            } => {
+                // | Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
                 let mut buffer = surface.buffer_mut().unwrap();
+                // the redraw call is blocking- will be limited by the cam fps
                 let next_frame_at = redraw(&mut buffer, &fr, &mut cam).expect("failed to draw");
                 buffer.present().unwrap();
-                // window.request_redraw();
-                elwt.set_control_flow(winit::event_loop::ControlFlow::wait_duration(
-                    next_frame_at - Instant::now(),
-                ));
+                window.request_redraw();
+                elwt.set_control_flow(ControlFlow::wait_duration(next_frame_at - Instant::now()));
             }
             Event::WindowEvent {
                 event:
@@ -143,7 +168,8 @@ fn handle_add(
                     | WindowEvent::KeyboardInput {
                         event:
                             KeyEvent {
-                                logical_key: Key::Named(NamedKey::Escape),
+                                logical_key:
+                                    Key::Named(NamedKey::Escape) | Key::Named(NamedKey::Exit),
                                 ..
                             },
                         ..
