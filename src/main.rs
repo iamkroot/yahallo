@@ -30,9 +30,9 @@ enum Commands {
     Add {
         #[arg(long)]
         label: Option<String>,
-        #[arg(long)]
-        /// When to exit. Runs indefinitely unless specified.
-        duration: Option<humantime::Duration>,
+        /// How long to wait for face
+        #[arg(long, default_value = "30s")]
+        timeout: humantime::Duration,
     },
     // #[command(arg_required_else_help = true)]
     Test {
@@ -55,7 +55,7 @@ fn main() -> anyhow::Result<()> {
     );
     let fr = FaceRecognizer::new(&config)?;
     match args.command {
-        Commands::Add { label, duration } => handle_add(config, duration, fr, label)?,
+        Commands::Add { label, timeout } => handle_add(config, timeout.into(), fr, label)?,
         Commands::Test {
             exit_on_match,
             duration,
@@ -117,13 +117,12 @@ fn redraw(buffer: &mut [u32], fr: &FaceRecognizer, cam: &mut Cam) -> anyhow::Res
 
 fn handle_add(
     config: Config,
-    duration: Option<humantime::Duration>,
+    timeout: Duration,
     fr: FaceRecognizer,
     label: Option<String>,
 ) -> anyhow::Result<()> {
     let mut cam = Cam::start(config.camera_path())?;
     let (width, height) = cam.resolution()?;
-    let duration = duration.map(|d| d.into());
     let start = Instant::now();
     let event_loop = EventLoop::new().unwrap();
     let window = Rc::new(
@@ -142,12 +141,10 @@ fn handle_add(
     surface.resize(width, height).unwrap();
     event_loop.listen_device_events(winit::event_loop::DeviceEvents::Never);
     event_loop.run(move |evt, elwt| {
-        if let Some(dur) = duration {
-            if start.elapsed() >= dur {
-                warn!("Timeout trying to detect face!");
-                elwt.exit();
-                return;
-            }
+        if start.elapsed() >= timeout {
+            warn!("Timeout trying to detect face!");
+            elwt.exit();
+            return;
         }
         match evt {
             Event::WindowEvent {
