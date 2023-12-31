@@ -4,8 +4,8 @@ use dlib_face_recognition::{
     FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncodings,
     FaceLocations, ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait, Rectangle,
 };
-use image::RgbImage;
 use image::buffer::ConvertBuffer;
+use image::RgbImage;
 use rscam::Frame;
 
 pub mod camera;
@@ -125,7 +125,21 @@ pub fn process_image(frame: Frame) -> Result<RgbImage> {
     Ok(img.convert())
 }
 
+/// Resize to target width preserving the aspect ratio
+pub fn resize_to_width(img: &RgbImage, target_width: u32) -> RgbImage {
+    let w = img.width();
+    let aspect_ratio = w as f64 / img.height() as f64;
+    let target_height = (target_width as f64 / aspect_ratio).round() as u32;
+    // TODO: Need to make sure height is divisible by x??
+    image::imageops::resize(
+        img,
+        target_width,
+        target_height,
+        image::imageops::FilterType::Nearest,
+    )
+}
+
 pub fn img_to_dlib(img: &RgbImage) -> Result<ImageMatrix> {
-    let img = image::imageops::resize(img, 320, 180, image::imageops::FilterType::Nearest);
+    let img = resize_to_width(img, 320);
     Ok(ImageMatrix::from_image(&img))
 }

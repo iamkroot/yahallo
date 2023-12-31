@@ -2,20 +2,18 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use anyhow::Ok;
+use anyhow::{bail, Ok};
 use clap::Parser;
 use dlib_face_recognition::{ImageMatrix, Rectangle};
-use image::buffer::ConvertBuffer;
-use image::RgbImage;
 use log::{debug, info, warn};
-use winit::event::{Event, KeyEvent, StartCause, WindowEvent};
+use winit::event::{Event, KeyEvent, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowBuilder;
 use yahallo::camera::Cam;
 use yahallo::config::Config;
 use yahallo::data::ModelData;
-use yahallo::{process_image, FaceRecognizer, Stopwatch};
+use yahallo::{img_to_dlib, process_image, resize_to_width, FaceRecognizer};
 
 #[derive(Debug, Parser, Clone)]
 #[command(name = "yahallo")]
@@ -70,18 +68,11 @@ fn redraw(buffer: &mut [u32], fr: &FaceRecognizer, cam: &mut Cam) -> anyhow::Res
     let frame = cam.capture()?;
     let start = Instant::now();
     let next_frame_at = start + cam.interval();
-    let aspect_ratio = frame.resolution.0 as f64 / frame.resolution.1 as f64;
 
     const WIDTH: f64 = 320.0;
     let scale = frame.resolution.0 as f64 / WIDTH;
     let img = process_image(frame)?;
-    // let matrix = img_to_dlib(&img)?;
-    let resized = image::imageops::resize(
-        &img,
-        WIDTH as u32,
-        (WIDTH / aspect_ratio) as u32,
-        image::imageops::FilterType::Nearest,
-    );
+    let resized = resize_to_width(&img, 320);
     let matrix = ImageMatrix::from_image(&resized);
     let Some(rect) = fr.get_face_rect(&matrix)? else {
         info!("No face in frame");
@@ -122,7 +113,32 @@ fn handle_add(
     fr: FaceRecognizer,
     label: Option<String>,
 ) -> anyhow::Result<()> {
-    todo!()
+    let mut cam = Cam::start(config.camera_path())?;
+    let start = Instant::now();
+    loop {
+        if start.elapsed() >= timeout {
+            // timed out
+            warn!("Timeout trying to detect face!");
+            bail!("No face detected!");
+        }
+        let frame = cam.capture()?;
+        let img = process_image(frame)?;
+        let matrix = img_to_dlib(&img)?;
+        let Some(rect) = fr.get_face_rect(&matrix)? else {
+            info!("No face in frame");
+            continue;
+        };
+        let encodings = fr.gen_encodings_with_rect(&matrix, &rect);
+        let encoding = encodings.first().unwrap();
+        let model = ModelData::new(
+            0,
+            label.unwrap_or_else(|| String::from("model")),
+            0,
+            encoding.clone(),
+        );
+        break;
+    }
+    Ok(())
 }
 
 fn handle_test(
@@ -191,31 +207,5 @@ fn handle_test(
             }
         }
     })?;
-    // loop {
-    // if let Some(dur) = duration {
-    //     if start.elapsed() >= dur {
-    //         // timed out
-    //         warn!("Timeout trying to detect face!");
-    //         break;
-    //     }
-    // }
-    // let frame = cam.capture()?;
-    // let matrix: dlib_face_recognition::ImageMatrix = convert_image(frame)?;
-    // let Some(rect) = fr.get_face_rect(&matrix)? else {
-    //     info!("No face in frame");
-    //     continue;
-    // };
-    // would sure be nice to get some generators here
-    // let encodings = fr.gen_encodings_with_rect(&matrix, &rect);
-    // if let Some(encoding) = encodings.first() {
-    //     let model = ModelData::new(
-    //         0,
-    //         label.unwrap_or_else(|| String::from("model")),
-    //         0,
-    //         encoding.clone(),
-    //     );
-    //     break;
-    // }
-    // }
     Ok(())
 }
