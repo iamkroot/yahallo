@@ -143,8 +143,9 @@ impl Faces {
         encoding: &FaceEncoding,
         threshold: f64,
     ) -> Option<&ModelData> {
+        log::info!("Checking against {} known faces", self.0.len());
         self.0
             .iter()
-            .find(|known| known.encoding().distance(encoding) >= threshold)
+            .find(|known| known.encoding().distance(encoding) <= threshold)
     }
 }
