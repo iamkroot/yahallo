@@ -6,6 +6,7 @@ use anyhow::Ok;
 use clap::Parser;
 use dlib_face_recognition::{ImageMatrix, Rectangle};
 use image::buffer::ConvertBuffer;
+use image::RgbImage;
 use log::{debug, info, warn};
 use winit::event::{Event, KeyEvent, StartCause, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -14,7 +15,7 @@ use winit::window::WindowBuilder;
 use yahallo::camera::Cam;
 use yahallo::config::Config;
 use yahallo::data::ModelData;
-use yahallo::{process_image, FaceRecognizer};
+use yahallo::{process_image, FaceRecognizer, Stopwatch};
 
 #[derive(Debug, Parser, Clone)]
 #[command(name = "yahallo")]
@@ -41,7 +42,7 @@ enum Commands {
         exit_on_match: bool,
         /// When to exit. Runs indefinitely unless specified.
         #[arg(long)]
-        duration: Option<humantime::Duration>,
+        timeout: Option<humantime::Duration>,
     },
 }
 
@@ -58,8 +59,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Add { label, timeout } => handle_add(config, timeout.into(), fr, label)?,
         Commands::Test {
             exit_on_match,
-            duration,
-        } => todo!(),
+            timeout,
+        } => handle_test(config, timeout.map(|t| t.into()), fr)?,
     }
     Ok(())
 }
@@ -121,6 +122,14 @@ fn handle_add(
     fr: FaceRecognizer,
     label: Option<String>,
 ) -> anyhow::Result<()> {
+    todo!()
+}
+
+fn handle_test(
+    config: Config,
+    timeout: Option<Duration>,
+    fr: FaceRecognizer,
+) -> anyhow::Result<()> {
     let mut cam = Cam::start(config.camera_path())?;
     let (width, height) = cam.resolution()?;
     let start = Instant::now();
@@ -141,10 +150,12 @@ fn handle_add(
     surface.resize(width, height).unwrap();
     event_loop.listen_device_events(winit::event_loop::DeviceEvents::Never);
     event_loop.run(move |evt, elwt| {
-        if start.elapsed() >= timeout {
-            warn!("Timeout trying to detect face!");
-            elwt.exit();
-            return;
+        if let Some(timeout) = timeout {
+            if start.elapsed() >= timeout {
+                warn!("Timeout trying to detect face!");
+                elwt.exit();
+                return;
+            }
         }
         match evt {
             Event::WindowEvent {
