@@ -1,0 +1,18 @@
+[package]
+name = "yahallo-daemon"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dbus-crossroads = "0.5.2"
+dbus = "0.9.7"
+yahallo = { path = "../yahallo" }
+anyhow = { workspace = true }
+log = { workspace = true }
+pretty_env_logger = { workspace = true }
+
+[[bin]]
+name = "yahallod"
+path = "src/main.rs"

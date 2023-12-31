@@ -33,6 +33,17 @@ impl Cam {
         Ok((w.try_into()?, h.try_into()?))
     }
 
+    #[allow(dead_code)]
+    fn dump_resolutions(cam: &rscam::Camera) {
+        for fmt in cam.formats() {
+            let Ok(fmti) = fmt else {
+                continue;
+            };
+            dbg!(&fmti);
+            let _ = dbg!(cam.resolutions(&fmti.format));
+        }
+    }
+
     fn configure(cam: &rscam::Camera) -> Result<rscam::Config<'static>> {
         let format = b"GREY";
         let res = {

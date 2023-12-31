@@ -14,7 +14,6 @@ use rscam::Frame;
 pub mod camera;
 pub mod config;
 pub mod data;
-pub mod pam_handler;
 mod utils;
 
 use crate::config::Config;

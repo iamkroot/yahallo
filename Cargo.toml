@@ -1,25 +1,19 @@
-[package]
-name = "yahallo"
-version = "0.1.0"
-edition = "2021"
-# default-run = ""
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[workspace]
+members = ["daemon", "cli", "yahallo", "pam"]
+resolver = "2"
 
-[dependencies]
+[workspace.dependencies]
 image = "0.24.7"
-serde_json = "1.0.108"
-rscam = "0.5.5"
 clap = { version = "4", features = ["derive"] }
 dlib-face-recognition = "0.3.2"
 libc = "0.2.150"
 anyhow = "1.0.75"
 humantime = "2.1.0"
 log = "0.4.20"
-softbuffer = "0.4.0"
-winit = "0.29.6"
-dbus-crossroads = "0.5.2"
-dbus = "0.9.7"
 pretty_env_logger = "0.5.0"
 
-[lib]
-crate-type = ["cdylib", "rlib"]
+[profile.release]
+lto = true
+
+[profile.release.build-override]
+opt-level = 3
