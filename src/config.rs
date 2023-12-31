@@ -11,6 +11,8 @@ pub struct Config {
     faces_file: PathBuf,
     /// Euclidean distance
     pub(crate) match_threshold: f64,
+    /// maximum percent of dark pixels in frame to allow face recog
+    dark_threshold: u32,
 }
 
 impl Config {
@@ -19,15 +21,20 @@ impl Config {
         dlib_model_dir: PathBuf,
         faces_file: PathBuf,
         match_threshold: f64,
+        dark_threshold: u32,
     ) -> anyhow::Result<Self> {
         if faces_file.is_dir() {
             bail!("Faces file should not be a dir!");
+        }
+        if dark_threshold > 100 {
+            bail!("Dark threshold percent should be 0..=100");
         }
         Ok(Self {
             camera_path,
             dlib_model_dir,
             faces_file,
             match_threshold,
+            dark_threshold,
         })
     }
 
@@ -46,5 +53,9 @@ impl Config {
 
     pub fn faces_file(&self) -> &Path {
         &self.faces_file
+    }
+
+    pub fn dark_threshold(&self) -> u32 {
+        self.dark_threshold
     }
 }

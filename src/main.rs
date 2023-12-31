@@ -12,7 +12,7 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowBuilder;
 use yahallo::camera::Cam;
 use yahallo::config::Config;
-use yahallo::{img_to_dlib, process_image, resize_to_width, FaceRecognizer};
+use yahallo::{img_to_dlib, is_dark, process_image, resize_to_width, to_rgb, FaceRecognizer};
 
 #[derive(Debug, Parser, Clone)]
 #[command(name = "yahallo")]
@@ -50,11 +50,12 @@ fn main() -> anyhow::Result<()> {
         PathBuf::from("data"),
         PathBuf::from("data/faces.json"),
         0.8,
+        50,
     )?;
     match args.command {
         Commands::Add { label, timeout } => handle_add(config, timeout.into(), label)?,
         Commands::Test {
-            exit_on_match,
+            exit_on_match: _,
             timeout,
         } => handle_test(config, timeout.map(|t| t.into()))?,
     }
@@ -62,7 +63,12 @@ fn main() -> anyhow::Result<()> {
 }
 const RED: u32 = u32::from_be_bytes([0, 255, 0, 0]);
 
-fn redraw(buffer: &mut [u32], fr: &FaceRecognizer, cam: &mut Cam) -> anyhow::Result<Instant> {
+fn redraw(
+    buffer: &mut [u32],
+    fr: &FaceRecognizer,
+    cam: &mut Cam,
+    config: &Config,
+) -> anyhow::Result<Instant> {
     let frame = cam.capture()?;
     let start = Instant::now();
     let next_frame_at = start + cam.interval();
@@ -70,6 +76,15 @@ fn redraw(buffer: &mut [u32], fr: &FaceRecognizer, cam: &mut Cam) -> anyhow::Res
     const WIDTH: f64 = 320.0;
     let scale = frame.resolution.0 as f64 / WIDTH;
     let img = process_image(frame)?;
+    if is_dark(&img, config.dark_threshold()) {
+        info!("frame too dark!");
+        // TODO: Do we want to skip this?
+        for (i, p) in img.pixels().enumerate() {
+            buffer[i] = u32::from_be_bytes([0, p.0[0], p.0[1], p.0[2]]);
+        }
+        return Ok(next_frame_at);
+    }
+    let img = to_rgb(&img);
     let resized = resize_to_width(&img, 320);
     let matrix = ImageMatrix::from_image(&resized);
     let Some(rect) = fr.get_face_rect(&matrix)? else {
@@ -116,6 +131,11 @@ fn handle_add(config: Config, timeout: Duration, label: Option<String>) -> anyho
         }
         let frame = cam.capture()?;
         let img = process_image(frame)?;
+        if is_dark(&img, config.dark_threshold()) {
+            info!("frame too dark!");
+            continue;
+        }
+        let img = to_rgb(&img);
         let matrix = img_to_dlib(&img)?;
         let Some(rect) = fr.get_face_rect(&matrix)? else {
             info!("No face in frame");
@@ -167,7 +187,8 @@ fn handle_test(config: Config, timeout: Option<Duration>) -> anyhow::Result<()> 
                 // | Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
                 let mut buffer = surface.buffer_mut().unwrap();
                 // the redraw call is blocking- will be limited by the cam fps
-                let next_frame_at = redraw(&mut buffer, &fr, &mut cam).expect("failed to draw");
+                let next_frame_at =
+                    redraw(&mut buffer, &fr, &mut cam, &config).expect("failed to draw");
                 buffer.present().unwrap();
                 window.request_redraw();
                 elwt.set_control_flow(ControlFlow::wait_duration(next_frame_at - Instant::now()));

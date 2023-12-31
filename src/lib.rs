@@ -128,15 +128,27 @@ impl FaceRecognizer {
 //     Ok(ImageMatrix::from_image(&img))
 // }
 
+type GrayFrameImage = image::ImageBuffer<image::Luma<u8>, Frame>;
+
 /// Convert the frame into an rgb image
-pub fn process_image(frame: Frame) -> Result<RgbImage> {
-    let img = image::ImageBuffer::<image::Luma<u8>, _>::from_raw(
+pub fn process_image(frame: Frame) -> Result<GrayFrameImage> {
+    image::ImageBuffer::<image::Luma<u8>, _>::from_raw(
         frame.resolution.0,
         frame.resolution.1,
         frame,
     )
-    .ok_or(anyhow::anyhow!("no img from cam frame"))?;
-    Ok(img.convert())
+    .ok_or(anyhow::anyhow!("no img from cam frame"))
+}
+
+pub fn to_rgb(img: &GrayFrameImage) -> RgbImage {
+    img.convert()
+}
+
+pub fn is_dark(img: &GrayFrameImage, threshold_percent: u32) -> bool {
+    let hist = gen_hist::<8>(img);
+    let total: u32 = hist.iter().sum();
+    let dark_percent = (hist[0] * 100) / total;
+    dark_percent >= threshold_percent
 }
 
 /// Resize to target width preserving the aspect ratio
@@ -151,6 +163,21 @@ pub fn resize_to_width(img: &RgbImage, target_width: u32) -> RgbImage {
         target_height,
         image::imageops::FilterType::Nearest,
     )
+}
+
+const fn bin<const BINS: usize>(val: u8) -> usize {
+    (val / (((u8::MAX as usize + 1) / BINS) as u8)) as usize
+}
+
+/// Get the histogram from a grayscale image
+fn gen_hist<const BINS: usize>(img: &GrayFrameImage) -> [u32; BINS] {
+    let mut hist = [0; BINS];
+
+    for p in img.pixels() {
+        let val = p.0[0];
+        hist[bin::<BINS>(val)] += 1;
+    }
+    hist
 }
 
 pub fn img_to_dlib(img: &RgbImage) -> Result<ImageMatrix> {
