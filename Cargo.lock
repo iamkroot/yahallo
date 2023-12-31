@@ -2361,7 +2361,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "dlib-face-recognition",
  "humantime",
  "image",
  "log",

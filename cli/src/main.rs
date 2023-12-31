@@ -4,7 +4,6 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Ok};
 use clap::Parser;
-use dlib_face_recognition::{ImageMatrix, Rectangle};
 use log::{debug, info, warn};
 use winit::event::{Event, KeyEvent, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -12,7 +11,7 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowBuilder;
 use yahallo::camera::Cam;
 use yahallo::config::Config;
-use yahallo::{img_to_dlib, is_dark, process_image, resize_to_width, to_rgb, FaceRecognizer};
+use yahallo::{ImageMatrix, Rectangle, img_to_dlib, is_dark, process_image, resize_to_width, to_rgb, FaceRecognizer};
 
 #[derive(Debug, Parser, Clone)]
 #[command(name = "yahallo")]

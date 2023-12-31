@@ -4,9 +4,9 @@ use anyhow::Result;
 use data::Faces;
 use dlib_face_recognition::{
     FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncoding,
-    FaceEncodings, FaceLocations, ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait,
-    Rectangle,
+    FaceEncodings, FaceLocations, LandmarkPredictor, LandmarkPredictorTrait,
 };
+pub use dlib_face_recognition::{ImageMatrix, Rectangle};
 use image::buffer::ConvertBuffer;
 use image::RgbImage;
 use rscam::Frame;
