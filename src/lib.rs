@@ -1,8 +1,11 @@
+use std::path::Path;
+
 use anyhow::Result;
 use data::Faces;
 use dlib_face_recognition::{
-    FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncodings,
-    FaceLocations, ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait, Rectangle,
+    FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncoding,
+    FaceEncodings, FaceLocations, ImageMatrix, LandmarkPredictor, LandmarkPredictorTrait,
+    Rectangle,
 };
 use image::buffer::ConvertBuffer;
 use image::RgbImage;
@@ -55,7 +58,7 @@ impl FaceRecognizer {
             .map_err(|e| anyhow::anyhow!(e))?;
 
         let faces_file = config.faces_file();
-        let encs = Faces::from_file(&faces_file)?;
+        let encs = Faces::from_file(faces_file)?;
         Ok(Self {
             fdet: FaceDet(Box::new(fdet)),
             lm_pred,
@@ -99,6 +102,14 @@ impl FaceRecognizer {
             .known_faces
             .check_match(encoding, config.match_threshold)
             .is_some())
+    }
+
+    pub fn add_face(&mut self, enc: FaceEncoding, label: Option<String>) -> Result<()> {
+        self.known_faces.add_face(enc, label)
+    }
+
+    pub fn dump_faces_file(&self, path: &Path) -> Result<()> {
+        self.known_faces.to_file(path)
     }
 }
 

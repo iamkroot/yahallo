@@ -1,7 +1,7 @@
-use std::fmt::format;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, ErrorKind};
 use std::path::Path;
+use std::time::SystemTime;
 
 use anyhow::{anyhow, Context, Result};
 use dlib_face_recognition::FaceEncoding;
@@ -12,14 +12,14 @@ type FaceId = u64;
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct ModelData {
-    time: u64,
+    time: SystemTime,
     label: String,
     id: FaceId,
     data: FaceEncoding,
 }
 
 impl ModelData {
-    pub fn new(time: u64, label: String, id: FaceId, data: FaceEncoding) -> Self {
+    pub fn new(time: SystemTime, label: String, id: FaceId, data: FaceEncoding) -> Self {
         Self {
             time,
             label,
@@ -30,9 +30,12 @@ impl ModelData {
 
     fn from_json(v: &serde_json::Value) -> Result<Self> {
         Ok(ModelData {
-            time: v["time"]
-                .as_u64()
-                .ok_or_else(|| anyhow!("invalid 'time' in {v}"))?,
+            time: {
+                let secs = v["time"]
+                    .as_u64()
+                    .ok_or_else(|| anyhow!("invalid 'time' in {v}"))?;
+                std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs)
+            },
             label: v["label"]
                 .as_str()
                 .ok_or_else(|| anyhow!("invalid 'label' in {v}"))?
@@ -63,8 +66,13 @@ impl ModelData {
     }
 
     pub(crate) fn as_json(&self) -> serde_json::Value {
+        let time = self
+            .time
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         json!({
-            "time": self.time,
+            "time": time,
             "label": self.label,
             "id": self.id,
             "data": self.data.as_ref()
@@ -93,31 +101,39 @@ impl Faces {
             r => r.with_context(|| format!("{} not found", path.display()))?,
         };
         let rdr = BufReader::new(f);
-        let encs: serde_json::Value = serde_json::from_reader(rdr).context("read json")?;
-        let a = encs
-            .as_array()
-            .ok_or_else(|| anyhow!("Failed to read json at {}", path.display()))?;
+        let encs: Vec<serde_json::Value> = serde_json::from_reader(rdr)
+            .with_context(|| anyhow!("Failed to read json at {}", path.display()))?;
 
         Ok(Self(
-            a.iter()
+            encs.iter()
                 .map(ModelData::from_json)
                 .collect::<Result<Vec<_>>>()?,
         ))
     }
 
     /// Parse the faces.json file
-    #[allow(dead_code)]
     pub(crate) fn to_file(&self, path: &Path) -> Result<()> {
-        let f = File::open(path).context("writing file")?;
+        let f = File::options()
+            .create(true)
+            .write(true)
+            .open(path)
+            .with_context(|| format!("file {}", path.display()))?;
         let writer = BufWriter::new(f);
         let arr = self.0.iter().map(ModelData::as_json).collect::<Vec<_>>();
         serde_json::to_writer_pretty(writer, &serde_json::json!(arr))?;
+        println!("written {} faces to {}", self.0.len(), path.display());
         Ok(())
     }
 
-    pub(crate) fn add_face(&mut self, data: ModelData) -> Result<()> {
+    pub(crate) fn add_face(&mut self, enc: FaceEncoding, label: Option<String>) -> Result<()> {
         // TODO: Check if too similar
-        // TODO: Check for ID conflicts
+        let new_id = self.0.last().map_or(1, |d| d.id + 1);
+        let data = ModelData {
+            time: SystemTime::now(),
+            label: label.unwrap_or_else(|| format!("Model #{new_id}")),
+            id: new_id,
+            data: enc,
+        };
         self.0.push(data);
         Ok(())
     }

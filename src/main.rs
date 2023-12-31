@@ -12,7 +12,6 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowBuilder;
 use yahallo::camera::Cam;
 use yahallo::config::Config;
-use yahallo::data::ModelData;
 use yahallo::{img_to_dlib, process_image, resize_to_width, FaceRecognizer};
 
 #[derive(Debug, Parser, Clone)]
@@ -49,16 +48,15 @@ fn main() -> anyhow::Result<()> {
     let config = Config::new(
         PathBuf::from("/dev/video2"),
         PathBuf::from("data"),
-        PathBuf::from("data"),
+        PathBuf::from("data/faces.json"),
         0.8,
-    );
-    let fr = FaceRecognizer::new(&config)?;
+    )?;
     match args.command {
-        Commands::Add { label, timeout } => handle_add(config, timeout.into(), fr, label)?,
+        Commands::Add { label, timeout } => handle_add(config, timeout.into(), label)?,
         Commands::Test {
             exit_on_match,
             timeout,
-        } => handle_test(config, timeout.map(|t| t.into()), fr)?,
+        } => handle_test(config, timeout.map(|t| t.into()))?,
     }
     Ok(())
 }
@@ -107,17 +105,12 @@ fn redraw(buffer: &mut [u32], fr: &FaceRecognizer, cam: &mut Cam) -> anyhow::Res
     Ok(next_frame_at)
 }
 
-fn handle_add(
-    config: Config,
-    timeout: Duration,
-    fr: FaceRecognizer,
-    label: Option<String>,
-) -> anyhow::Result<()> {
+fn handle_add(config: Config, timeout: Duration, label: Option<String>) -> anyhow::Result<()> {
+    let mut fr = FaceRecognizer::new(&config)?;
     let mut cam = Cam::start(config.camera_path())?;
     let start = Instant::now();
     loop {
         if start.elapsed() >= timeout {
-            // timed out
             warn!("Timeout trying to detect face!");
             bail!("No face detected!");
         }
@@ -130,22 +123,15 @@ fn handle_add(
         };
         let encodings = fr.gen_encodings_with_rect(&matrix, &rect);
         let encoding = encodings.first().unwrap();
-        let model = ModelData::new(
-            0,
-            label.unwrap_or_else(|| String::from("model")),
-            0,
-            encoding.clone(),
-        );
+        fr.add_face(encoding.clone(), label)?;
+        fr.dump_faces_file(config.faces_file())?;
         break;
     }
     Ok(())
 }
 
-fn handle_test(
-    config: Config,
-    timeout: Option<Duration>,
-    fr: FaceRecognizer,
-) -> anyhow::Result<()> {
+fn handle_test(config: Config, timeout: Option<Duration>) -> anyhow::Result<()> {
+    let fr = FaceRecognizer::new(&config)?;
     let mut cam = Cam::start(config.camera_path())?;
     let (width, height) = cam.resolution()?;
     let start = Instant::now();
