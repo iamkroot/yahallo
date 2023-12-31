@@ -93,7 +93,10 @@ impl FaceRecognizer {
 
     pub fn check_match(&self, matrix: &ImageMatrix, config: &Config) -> Result<bool> {
         // TODO: Check staleness of self.known_faces
-        let encodings = self.gen_encodings(matrix)?;
+        let Some(rect) = self.get_face_rect(matrix)? else {
+            return Ok(false);
+        };
+        let encodings = self.gen_encodings_with_rect(matrix, &rect);
         let Some(encoding) = encodings.first() else {
             anyhow::bail!("Encoder failed to process landmarks");
         };
