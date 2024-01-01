@@ -1,25 +1,16 @@
-# Howdy in Rust
+# Yahallo
 
+Yet Another Hallo - a Face Recognition integration for Linux.
 
-## Architecture
+## TODO
 
-* Input thread: Init camera, Read frames at 20fps, do resize, histogram (darkness)
-  --- Queue 1: (frame matrix) n=10 ---
-* FD Thread: Init Face Detector; do face detection on threads
-  --- Queue 2: (rectangles,frame matrix) n=10 ---
-* Main Thread: Init landmark predictor, encoder; do both
-
-
-* 
-```rs
-struct Cam {
-  destroying: Option<JoinHandle>
-}
-impl Cam {
-  fn start_stream(&mut self) {
-    camera = new camera
-    call camera.start
-    return Stream{cam, self}
-  }
-}
-``` 
+Running list of features I'd like to implement, ordered by (approximate) priority:
+* [ ] Read config from file (`/etc/`)
+* [ ] Also support password input in parallel for PAM module
+* [ ] DBus Method to reload known faces in the daemon
+* [ ] Write an install script (?)
+* [ ] Allow changing the config path via CLI
+* [ ] `--replace` support for `yahallod`
+* [ ] Allow using session bus in `yahallod` (for testing)
+* [ ] Benchmark and reduce latency
+* [ ] Daemon should watch the known faces file for changes and reload autoreload
