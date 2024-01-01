@@ -67,8 +67,7 @@ fn main() -> anyhow::Result<()> {
         .filter_level(log::LevelFilter::Trace)
         .init();
 
-    let c = Connection::new_session()?;
-    // let c = Connection::new_system()?;
+    let c = Connection::new_system()?;
     const NAME: &str = "com.iamkroot.yahallo";
     let reply = c.request_name(NAME, false, false, true)?;
     if reply != RequestNameReply::PrimaryOwner {
