@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 dbus-crossroads = "0.5.2"
-dbus = "0.9.7"
+dbus = { workspace = true }
 yahallo = { path = "../yahallo" }
 anyhow = { workspace = true }
 log = { workspace = true }
