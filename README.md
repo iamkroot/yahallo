@@ -13,4 +13,5 @@ Running list of features I'd like to implement, ordered by (approximate) priorit
 * [ ] `--replace` support for `yahallod`
 * [ ] Allow using session bus in `yahallod` (for testing)
 * [ ] Benchmark and reduce latency
-* [ ] Daemon should watch the known faces file for changes and reload autoreload
+* [ ] Daemon should watch the known faces file for changes and autoreload
+* [ ] Look into other image resizing methods (Linear, Cubic, etc.)
