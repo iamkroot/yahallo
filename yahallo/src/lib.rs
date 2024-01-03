@@ -9,15 +9,18 @@ use dlib_face_recognition::{
 pub use dlib_face_recognition::{ImageMatrix, Rectangle};
 use image::buffer::ConvertBuffer;
 use image::RgbImage;
+use log::warn;
 use rscam::Frame;
 
 pub mod camera;
 pub mod config;
 pub mod data;
+mod error;
 mod utils;
 
 use crate::config::Config;
 pub use crate::utils::Stopwatch;
+pub use crate::error::{Error, YahalloResult};
 
 struct FaceDet(Box<dyn FaceDetectorTrait>);
 
@@ -67,19 +70,18 @@ impl FaceRecognizer {
     }
 
     /// Returns largest face rect on image, if it is available
-    pub fn get_face_rect(&self, matrix: &ImageMatrix) -> Result<Option<Rectangle>> {
+    pub fn get_face_rect(&self, matrix: &ImageMatrix) -> YahalloResult<Option<Rectangle>> {
         // TODO: Actually return the largest :P
         let locs = self.fdet.face_locations(matrix);
         if locs.len() > 1 {
-            anyhow::bail!("Expected just one face, found {}", locs.len());
+            warn!("Expected just one face, found {}", locs.len());
+            return Err(Error::MultipleFaces);
         }
         Ok(locs.first().cloned())
     }
 
-    pub fn gen_encodings(&self, matrix: &ImageMatrix) -> Result<FaceEncodings> {
-        let rect = &self
-            .get_face_rect(matrix)?
-            .ok_or_else(|| anyhow::anyhow!("No faces detected!"))?;
+    pub fn gen_encodings(&self, matrix: &ImageMatrix) -> YahalloResult<FaceEncodings> {
+        let rect = &self.get_face_rect(matrix)?.ok_or(Error::NoFace)?;
         let landmarks = self.lm_pred.face_landmarks(matrix, rect);
         let encodings = self.encoder.get_face_encodings(matrix, &[landmarks], 0);
         Ok(encodings)
@@ -90,15 +92,13 @@ impl FaceRecognizer {
         self.encoder.get_face_encodings(matrix, &[landmarks], 0)
     }
 
-    pub fn check_match(&self, matrix: &ImageMatrix, config: &Config) -> Result<bool> {
+    pub fn check_match(&self, matrix: &ImageMatrix, config: &Config) -> YahalloResult<bool> {
         // TODO: Check staleness of self.known_faces
         let Some(rect) = self.get_face_rect(matrix)? else {
             return Ok(false);
         };
         let encodings = self.gen_encodings_with_rect(matrix, &rect);
-        let Some(encoding) = encodings.first() else {
-            anyhow::bail!("Encoder failed to process landmarks");
-        };
+        let encoding = encodings.first().unwrap();
         // TODO: Return more info about the match
         Ok(self
             .known_faces

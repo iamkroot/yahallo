@@ -3,16 +3,13 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use dbus::{
-    blocking::{stdintf::org_freedesktop_dbus::RequestNameReply, Connection},
-    MethodErr,
-};
+use dbus::blocking::{stdintf::org_freedesktop_dbus::RequestNameReply, Connection};
 use dbus_crossroads::{Context, Crossroads};
 
 use anyhow::bail;
 use log::{info, warn};
 use yahallo::{camera::Cam, config::Config, img_to_dlib, process_image, FaceRecognizer};
-use yahallo::{is_dark, to_rgb};
+use yahallo::{is_dark, to_rgb, YahalloResult, Error};
 
 struct State {
     fr: FaceRecognizer,
@@ -36,15 +33,15 @@ impl State {
 fn check_match(
     _ctx: &mut Context,
     State { fr, config }: &mut State,
-    (username,): (String,),
-) -> anyhow::Result<(String,)> {
+    (_username,): (String,),
+) -> YahalloResult<()> {
     let mut cam = Cam::start(config.camera_path())?;
     let start = Instant::now();
     let timeout = Duration::from_secs(10);
     loop {
         if start.elapsed() >= timeout {
             warn!("Timeout trying to detect face!");
-            return Ok((String::from("Timeout trying to detect face!"),));
+            return Err(Error::Timeout);
         }
         let frame = cam.capture()?;
         let img = process_image(frame)?;
@@ -59,7 +56,7 @@ fn check_match(
             break;
         }
     }
-    Ok((username,))
+    Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
@@ -78,8 +75,16 @@ fn main() -> anyhow::Result<()> {
         b.method(
             "CheckMatch",
             ("username",),
-            ("result",),
-            |ctx, state, input| check_match(ctx, state, input).map_err(|e| MethodErr::failed(&e)),
+            ("success", "error"),
+            |ctx, state, input| {
+                let m = check_match(ctx, state, input);
+                let res = match m {
+                    Ok(_) => None,
+                    Err(e) => Some(e)
+                };
+                let final_res = (res.is_none(), res.unwrap_or_else(|| unsafe { std::mem::uninitialized() }));
+                Ok(final_res)
+            },
         );
         // TODO: Add a reload faces method?
     });
