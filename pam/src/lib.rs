@@ -4,7 +4,7 @@ use ctor::ctor;
 use dbus::blocking::Connection;
 use log::{error, info, warn};
 use pamsm::{pam_module, Pam, PamError, PamFlags, PamLibExt, PamServiceModule};
-use yahallo::Error;
+use yahallo::DbusResult;
 
 struct YahalloDbus;
 
@@ -54,11 +54,11 @@ impl PamServiceModule for YahalloDbus {
         const NAME: &str = "com.iamkroot.yahallo";
 
         let proxy = conn.with_proxy(NAME, "/", Duration::from_secs(30));
-        let (success, err): (bool, Error) = match proxy.method_call(NAME, "CheckMatch", (user,)) {
+        let (res,): (DbusResult,) = match proxy.method_call(NAME, "CheckMatch", (user,)) {
             Ok(r) => r,
             Err(e) => {
                 let msg = format!("Failed DBus call {e}");
-                warn!("{msg}");
+                error!("{msg}");
                 if let Err(e2) = pamh.conv(Some(&msg), pamsm::PamMsgStyle::ERROR_MSG) {
                     // error showing pam conv
                     eprintln!("wut {e2}");
@@ -67,7 +67,7 @@ impl PamServiceModule for YahalloDbus {
                 return PamError::SERVICE_ERR;
             }
         };
-        if !success {
+        if let DbusResult::Error(err) = res {
             let msg = err.to_string();
             warn!("Error: {msg}");
             if let Err(e2) = pamh.conv(Some(&msg), pamsm::PamMsgStyle::ERROR_MSG) {

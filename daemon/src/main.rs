@@ -9,7 +9,7 @@ use dbus_crossroads::{Context, Crossroads};
 use anyhow::bail;
 use log::{info, warn};
 use yahallo::{camera::Cam, config::Config, img_to_dlib, process_image, FaceRecognizer};
-use yahallo::{is_dark, to_rgb, YahalloResult, Error};
+use yahallo::{is_dark, to_rgb, DbusResult, Error, YahalloResult};
 
 struct State {
     fr: FaceRecognizer,
@@ -75,15 +75,14 @@ fn main() -> anyhow::Result<()> {
         b.method(
             "CheckMatch",
             ("username",),
-            ("success", "error"),
+            ("result",),
             |ctx, state, input| {
                 let m = check_match(ctx, state, input);
                 let res = match m {
-                    Ok(_) => None,
-                    Err(e) => Some(e)
+                    Ok(_) => DbusResult::Success,
+                    Err(e) => DbusResult::Error(e),
                 };
-                let final_res = (res.is_none(), res.unwrap_or_else(|| unsafe { std::mem::uninitialized() }));
-                Ok(final_res)
+                Ok((res,))
             },
         );
         // TODO: Add a reload faces method?

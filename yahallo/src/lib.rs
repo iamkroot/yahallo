@@ -20,7 +20,7 @@ mod utils;
 
 use crate::config::Config;
 pub use crate::utils::Stopwatch;
-pub use crate::error::{Error, YahalloResult};
+pub use crate::error::{DbusResult, Error, YahalloResult};
 
 struct FaceDet(Box<dyn FaceDetectorTrait>);
 
