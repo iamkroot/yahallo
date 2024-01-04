@@ -1,6 +1,7 @@
 //! DBus daemon
 
 use std::path::PathBuf;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use dbus::blocking::{stdintf::org_freedesktop_dbus::RequestNameReply, Connection};
@@ -14,6 +15,7 @@ use yahallo::{is_dark, to_rgb, DbusResult, Error, YahalloResult};
 struct State {
     fr: FaceRecognizer,
     config: Config,
+    cam_drop: Option<JoinHandle<()>>,
 }
 
 impl State {
@@ -23,24 +25,40 @@ impl State {
             PathBuf::from("data"),
             PathBuf::from("data/faces.json"),
             0.8,
-            80,
+            90,
         )?;
         let fr = FaceRecognizer::new(&config)?;
-        Ok(Self { fr, config })
+        Ok(Self {
+            fr,
+            config,
+            cam_drop: None,
+        })
     }
 }
 
 fn check_match(
     _ctx: &mut Context,
-    State { fr, config }: &mut State,
+    State {
+        fr,
+        config,
+        cam_drop,
+    }: &mut State,
     (_username,): (String,),
 ) -> YahalloResult<()> {
+    if let Some(cam_drop) = cam_drop.take() {
+        let _ = cam_drop
+            .join()
+            .map_err(|_| warn!("Error joining camera drop thread"));
+    }
     let mut cam = Cam::start(config.camera_path())?;
     let start = Instant::now();
-    let timeout = Duration::from_secs(10);
+    let timeout = Duration::from_secs(2);
     loop {
         if start.elapsed() >= timeout {
             warn!("Timeout trying to detect face!");
+            *cam_drop = Some(std::thread::spawn(move || {
+                let _ = cam.stop().map_err(|e| warn!("Error stopping camera: {e}"));
+            }));
             return Err(Error::Timeout);
         }
         let frame = cam.capture()?;
@@ -56,6 +74,9 @@ fn check_match(
             break;
         }
     }
+    *cam_drop = Some(std::thread::spawn(move || {
+        let _ = cam.stop().map_err(|e| warn!("Error stopping camera: {e}"));
+    }));
     Ok(())
 }
 
