@@ -115,6 +115,7 @@ impl Faces {
     pub(crate) fn to_file(&self, path: &Path) -> Result<()> {
         let f = File::options()
             .create(true)
+            .truncate(true)
             .write(true)
             .open(path)
             .with_context(|| format!("file {}", path.display()))?;
