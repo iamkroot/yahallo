@@ -1,6 +1,6 @@
-use std::time::Duration;
-use std::path::Path;
 use std::num::NonZeroU32;
+use std::path::Path;
+use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 
@@ -88,6 +88,10 @@ impl Cam {
 
     pub fn capture(&mut self) -> Result<rscam::Frame> {
         Ok(self.cam.capture()?)
+    }
+
+    pub fn stop(&mut self) -> Result<()> {
+        self.cam.stop().context("cam stop err")
     }
 }
 
