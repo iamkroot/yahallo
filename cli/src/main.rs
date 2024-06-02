@@ -48,8 +48,8 @@ fn main() -> anyhow::Result<()> {
         PathBuf::from("/dev/video2"),
         PathBuf::from("data"),
         PathBuf::from("data/faces.json"),
-        0.8,
-        50,
+        0.6,
+        30,
     )?;
     match args.command {
         Commands::Add { label, timeout } => handle_add(config, timeout.into(), label)?,

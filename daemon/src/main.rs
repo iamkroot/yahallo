@@ -24,8 +24,8 @@ impl State {
             PathBuf::from("/dev/video2"),
             PathBuf::from("data"),
             PathBuf::from("data/faces.json"),
-            0.8,
-            90,
+            0.6,
+            30,
         )?;
         let fr = FaceRecognizer::new(&config)?;
         Ok(Self {
