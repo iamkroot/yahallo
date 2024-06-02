@@ -52,6 +52,8 @@ The main steps:
 3. ???
 4. Profit
 
+Note: I haven't tested it, but the same approach likely works on recent versions of GNOME too. Please create an issue if you confirm this.
+
 ## TODO
 
 Running list of features I'd like to implement, ordered by (approximate) priority:
