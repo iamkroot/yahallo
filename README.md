@@ -8,6 +8,7 @@ Note: This project is in very early stages (I mean, just look at the [TODOs](#to
 Use a recent Rust toolchain to build this project. See https://rustup.rs for install instructions.
 
 Build should be as simple as running `cargo build --release`.
+* Note: you might also need the `dlib` library installed on your system.
 
 The build generates three binaries-
 1. `yahallo` - The CLI executable that lets you manage faces, etc.
@@ -29,6 +30,17 @@ To support autostart on boot and to expose the service via DBus:
 * Install [`yahallod.service`](res/yahallod.service) to the systemd units dir (usually, `/usr/lib/systemd/system/`)
 * Install DBus service unit [com.iamkroot.yahallo.service](res/com.iamkroot.yahallo.service) to `/usr/share/dbus-1/system-services/`
 * Install DBus service conf [com.iamkroot.yahallo.conf](res/com.iamkroot.yahallo.conf) to `/usr/share/dbus-1/system.d/`
+
+To install the dlib data models-
+1. Download:
+    * CNN Face Detector: http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2
+    * Landmark Predictor: http://dlib.net/files/mmod_human_face_detector.dat.bz2
+    * Face Recognition Net: http://dlib.net/files/dlib_face_recognition_resnet_model_v1.dat.bz2
+2. Extract the `.dat` files
+3. Put the `.dat` in `/etc/yahallo/data/`
+
+### Initial setup
+* Use `sudo yahallo add --label $USER` to add your face
 
 ### sudo
 
