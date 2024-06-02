@@ -2,7 +2,7 @@
 pub enum Error {
     #[error("Timeout waiting for face!")]
     Timeout,
-    #[error("No models enrolled!")]
+    #[error("No face models enrolled!")]
     NoData,
     #[error("No face detected!")]
     NoFace,

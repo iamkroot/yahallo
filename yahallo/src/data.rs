@@ -126,6 +126,11 @@ impl Faces {
         Ok(())
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        // In the future, we can check for a particular user
+        self.0.is_empty()
+    }
+
     pub(crate) fn add_face(&mut self, enc: FaceEncoding, label: Option<String>) -> Result<()> {
         // TODO: Check if too similar
         let new_id = self.0.last().map_or(1, |d| d.id + 1);

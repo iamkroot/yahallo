@@ -110,6 +110,10 @@ impl FaceRecognizer {
         self.known_faces.add_face(enc, label)
     }
 
+    pub fn has_faces(&self) -> bool {
+        !self.known_faces.is_empty()
+    }
+
     pub fn dump_faces_file(&self, path: &Path) -> Result<()> {
         self.known_faces.to_file(path)
     }

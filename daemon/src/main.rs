@@ -45,6 +45,11 @@ fn check_match(
     }: &mut State,
     (_username,): (String,),
 ) -> YahalloResult<()> {
+    if !fr.has_faces() {
+        // In the future, we should check for this particular user
+        warn!("No faces in the database!");
+        return Err(Error::NoData);
+    }
     if let Some(cam_drop) = cam_drop.take() {
         let _ = cam_drop
             .join()
