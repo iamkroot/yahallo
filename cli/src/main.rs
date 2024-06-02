@@ -79,7 +79,7 @@ fn redraw(
         info!("frame too dark!");
         // TODO: Do we want to skip this?
         for (i, p) in img.pixels().enumerate() {
-            buffer[i] = u32::from_be_bytes([0, p.0[0], p.0[1], p.0[2]]);
+            buffer[i] = u32::from_be_bytes([0, p.0[0], p.0[0], p.0[0]]);
         }
         return Ok(next_frame_at);
     }
