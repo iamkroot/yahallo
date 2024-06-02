@@ -11,9 +11,8 @@ dbus = { workspace = true }
 log = { workspace = true }
 syslog = "6.1.0"
 ctor = "0.2.6"
-yahallo = {path = "../yahallo"}
+yahallo = { path = "../yahallo" }
 
 [lib]
 crate-type = ["cdylib"]
-name = "yahallo"
-
+name = "pam_yahallo"
