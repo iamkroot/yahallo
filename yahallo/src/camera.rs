@@ -110,7 +110,7 @@ mod tests {
         for i in 0..10 {
             println!("iter {i}");
             let _img = Stopwatch::time("img", || cam.capture().expect("frame err"));
-            std::thread::sleep_ms(100);
+            std::thread::sleep(Duration::from_millis(100));
         }
     }
 }
