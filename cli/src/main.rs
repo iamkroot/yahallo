@@ -11,7 +11,10 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowBuilder;
 use yahallo::camera::Cam;
 use yahallo::config::Config;
-use yahallo::{ImageMatrix, Rectangle, img_to_dlib, is_dark, process_image, resize_to_width, to_rgb, FaceRecognizer};
+use yahallo::{
+    img_to_dlib, is_dark, process_image, resize_to_width, to_rgb, FaceRecognizer, ImageMatrix,
+    Rectangle,
+};
 
 #[derive(Debug, Parser, Clone)]
 #[command(name = "yahallo")]
@@ -43,6 +46,9 @@ enum Commands {
 }
 
 fn main() -> anyhow::Result<()> {
+    pretty_env_logger::formatted_timed_builder()
+        .filter_level(log::LevelFilter::Debug)
+        .init();
     let args = Cli::parse();
     let config = Config::new(
         PathBuf::from("/dev/video2"),
@@ -71,7 +77,7 @@ fn redraw(
     let frame = cam.capture()?;
     let start = Instant::now();
     let next_frame_at = start + cam.interval();
-
+    info!("New frame");
     const WIDTH: f64 = 320.0;
     let scale = frame.resolution.0 as f64 / WIDTH;
     let img = process_image(frame)?;
@@ -87,7 +93,7 @@ fn redraw(
     let resized = resize_to_width(&img, 320);
     let matrix = ImageMatrix::from_image(&resized);
     let Some(rect) = fr.get_face_rect(&matrix)? else {
-        info!("No face in frame");
+        println!("No face in frame");
         // TODO: Do we want to skip this?
         for (i, p) in img.pixels().enumerate() {
             buffer[i] = u32::from_be_bytes([0, p.0[0], p.0[1], p.0[2]]);
