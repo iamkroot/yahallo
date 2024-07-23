@@ -71,12 +71,17 @@ fn check_match(
         if is_dark(&img, config.dark_threshold()) {
             info!("frame too dark!");
             continue;
+        } else {
+            info!("looking for matches");
         }
         let img = to_rgb(&img);
         let matrix = img_to_dlib(&img)?;
-        if fr.check_match(&matrix, config)? {
+        if let Some(model) = fr.check_match(&matrix, config)? {
+            println!("{}", model.label());
             // TODO: Check username!!
             break;
+        } else {
+            println!("No match");
         }
     }
     *cam_drop = Some(std::thread::spawn(move || {

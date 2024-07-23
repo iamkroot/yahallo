@@ -82,6 +82,10 @@ impl ModelData {
     pub fn encoding(&self) -> &FaceEncoding {
         &self.data
     }
+    
+    pub fn label(&self) -> &str {
+        &self.label
+    }
 }
 
 #[derive(Debug)]

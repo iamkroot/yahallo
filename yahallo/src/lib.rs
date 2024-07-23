@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use data::Faces;
+use data::{Faces, ModelData};
 use dlib_face_recognition::{
     FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncoding,
     FaceEncodings, FaceLocations, LandmarkPredictor, LandmarkPredictorTrait,
@@ -92,18 +92,17 @@ impl FaceRecognizer {
         self.encoder.get_face_encodings(matrix, &[landmarks], 0)
     }
 
-    pub fn check_match(&self, matrix: &ImageMatrix, config: &Config) -> YahalloResult<bool> {
+    pub fn check_match(&self, matrix: &ImageMatrix, config: &Config) -> YahalloResult<Option<&ModelData>> {
         // TODO: Check staleness of self.known_faces
         let Some(rect) = self.get_face_rect(matrix)? else {
-            return Ok(false);
+            return Ok(None);
         };
         let encodings = self.gen_encodings_with_rect(matrix, &rect);
         let encoding = encodings.first().unwrap();
         // TODO: Return more info about the match
         Ok(self
             .known_faces
-            .check_match(encoding, config.match_threshold)
-            .is_some())
+            .check_match(encoding, config.match_threshold))
     }
 
     pub fn add_face(&mut self, enc: FaceEncoding, label: Option<String>) -> Result<()> {
