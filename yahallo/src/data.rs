@@ -157,5 +157,12 @@ impl Faces {
         self.0
             .iter()
             .find(|known| known.encoding().distance(encoding) <= threshold)
+            .inspect(|v| {
+                log::trace!(target: "enc_match",
+                    "Matched: {} with distance {}",
+                    v.label,
+                    v.encoding().distance(encoding)
+                )
+            })
     }
 }
