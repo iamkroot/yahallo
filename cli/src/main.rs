@@ -220,11 +220,18 @@ fn handle_test(config: Config, timeout: Option<Duration>) -> anyhow::Result<()> 
                 // | Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
                 let mut buffer = surface.buffer_mut().unwrap();
                 // the redraw call is blocking- will be limited by the cam fps
-                let next_frame_at =
-                    redraw(&mut buffer, &fr, &mut cam, &config).expect("failed to draw");
+                let next_frame_at = match redraw(&mut buffer, &fr, &mut cam, &config) {
+                    Result::Ok(next_frame_at) => next_frame_at,
+                    Err(err) => {
+                        warn!("Failed to draw: {err}");
+                        Instant::now()
+                    }
+                };
                 buffer.present().unwrap();
                 window.request_redraw();
-                elwt.set_control_flow(ControlFlow::wait_duration(next_frame_at - Instant::now()));
+                elwt.set_control_flow(ControlFlow::wait_duration(
+                    (next_frame_at - Instant::now()).max(Duration::ZERO),
+                ));
             }
             Event::WindowEvent {
                 event:
