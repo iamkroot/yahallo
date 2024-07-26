@@ -66,7 +66,7 @@ fn main() -> anyhow::Result<()> {
     }
     Ok(())
 }
-const RED: u32 = u32::from_be_bytes([0, 255, 0, 0]);
+const RED: image::Rgba<u8> = image::Rgba::<u8>([0, 255, 0, 0]);
 
 fn redraw(
     buffer: &mut [u32],
@@ -81,23 +81,24 @@ fn redraw(
     const WIDTH: f64 = 320.0;
     let scale = frame.resolution.0 as f64 / WIDTH;
     let img = process_image(frame)?;
+    // first, write the original image to output buffer
+    debug_assert_eq!(
+        img.width() as usize * img.height() as usize,
+        buffer.len(),
+        "Why was it resized?"
+    );
+    for (i, p) in img.pixels().enumerate() {
+        buffer[i] = u32::from_be_bytes([0, p.0[0], p.0[0], p.0[0]]);
+    }
     if is_dark(&img, config.dark_threshold()) {
         info!("frame too dark!");
-        // TODO: Do we want to skip this?
-        for (i, p) in img.pixels().enumerate() {
-            buffer[i] = u32::from_be_bytes([0, p.0[0], p.0[0], p.0[0]]);
-        }
         return Ok(next_frame_at);
     }
     let img = to_rgb(&img);
-    let resized = resize_to_width(&img, 320);
+    let resized = resize_to_width(&img, WIDTH as _);
     let matrix = ImageMatrix::from_image(&resized);
     let Some(rect) = fr.get_face_rect(&matrix)? else {
-        println!("No face in frame");
-        // TODO: Do we want to skip this?
-        for (i, p) in img.pixels().enumerate() {
-            buffer[i] = u32::from_be_bytes([0, p.0[0], p.0[1], p.0[2]]);
-        }
+        info!("No face in frame");
         return Ok(next_frame_at);
     };
     // upscale the rect to orig image size
@@ -108,21 +109,48 @@ fn redraw(
         bottom: (rect.bottom as f64 * scale) as i64,
     };
     debug!("writing pixels!");
-    for (i, (c, r, p)) in img.enumerate_pixels().enumerate() {
-        let r = r as i64;
-        let c = c as i64;
-        let v = if ((r == rect.top || r == rect.bottom) && (c >= rect.left && c <= rect.right))
-            || ((c == rect.left || c == rect.right) && (r >= rect.top && r <= rect.bottom))
-        {
-            // Draw rect boundary in red
-            RED
-        } else {
-            u32::from_be_bytes([0, p.0[0], p.0[1], p.0[2]])
-        };
-        buffer[i] = v;
-        // let v: u32 = p.into();
-    }
+    draw_rect(buffer, img.width() as _, rect, RED);
     Ok(next_frame_at)
+}
+
+/// Helper to draw some lines
+fn draw_rect(buffer: &mut [u32], buffer_w: usize, rect: Rectangle, color: image::Rgba<u8>) {
+    let buffer_h = buffer.len() / buffer_w;
+    if rect.left >= buffer_w as _ || rect.top >= buffer_h as _ {
+        warn!("Rectangle outside of frame!");
+        return;
+    }
+    let clamped = Rectangle {
+        left: rect.left.max(0),
+        top: rect.top.max(0),
+        right: rect.right.min(buffer_w as _),
+        bottom: rect.bottom.min(buffer_h as _),
+    };
+    let color = u32::from_be_bytes(color.0);
+    // top horizontal
+    if rect.top >= 0 {
+        for x in clamped.left..clamped.right {
+            buffer[buffer_w * rect.top as usize + x as usize] = color;
+        }
+    }
+    // bottom horizontal
+    if rect.bottom < buffer_h as _ {
+        for x in clamped.left..clamped.right {
+            buffer[buffer_w * rect.bottom as usize + x as usize] = color;
+        }
+    }
+    // left vertical
+    if rect.left >= 0 {
+        for y in clamped.top..clamped.bottom {
+            buffer[buffer_w * y as usize + rect.left as usize] = color;
+        }
+    }
+    // right vertical
+    if rect.right < buffer_w as _ {
+        for y in clamped.top..clamped.bottom {
+            buffer[buffer_w * y as usize + rect.right as usize] = color;
+        }
+    }
 }
 
 fn handle_add(config: Config, timeout: Duration, label: Option<String>) -> anyhow::Result<()> {
