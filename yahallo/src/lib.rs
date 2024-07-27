@@ -8,6 +8,8 @@ use dlib_face_recognition::{
 };
 pub use dlib_face_recognition::{ImageMatrix, Rectangle};
 use image::buffer::ConvertBuffer;
+use image::GenericImageView;
+use image::Luma;
 use image::RgbImage;
 use log::warn;
 use rscam::Frame;
@@ -19,8 +21,8 @@ mod error;
 mod utils;
 
 use crate::config::Config;
-pub use crate::utils::Stopwatch;
 pub use crate::error::{DbusResult, Error, YahalloResult};
+pub use crate::utils::Stopwatch;
 
 struct FaceDet(Box<dyn FaceDetectorTrait>);
 
@@ -92,7 +94,11 @@ impl FaceRecognizer {
         self.encoder.get_face_encodings(matrix, &[landmarks], 0)
     }
 
-    pub fn check_match(&self, matrix: &ImageMatrix, config: &Config) -> YahalloResult<Option<&ModelData>> {
+    pub fn check_match(
+        &self,
+        matrix: &ImageMatrix,
+        config: &Config,
+    ) -> YahalloResult<Option<&ModelData>> {
         // TODO: Check staleness of self.known_faces
         let Some(rect) = self.get_face_rect(matrix)? else {
             return Ok(None);
@@ -132,7 +138,17 @@ impl FaceRecognizer {
 
 type GrayFrameImage = image::ImageBuffer<image::Luma<u8>, Frame>;
 
-/// Convert the frame into an rgb image
+pub fn center_crop(
+    img: &impl GenericImageView<Pixel = Luma<u8>>,
+) -> image::SubImage<&impl GenericImageView<Pixel = Luma<u8>>> {
+    let (w, h) = img.dimensions();
+    assert!(w >= h, "potrait image not supported");
+    let x = (w - h) / 2;
+    let cropped = image::imageops::crop_imm(img, x, 0, h, h);
+    cropped
+}
+
+/// Convert the frame into an image buffer
 pub fn process_image(frame: Frame) -> Result<GrayFrameImage> {
     image::ImageBuffer::<image::Luma<u8>, _>::from_raw(
         frame.resolution.0,
@@ -146,8 +162,9 @@ pub fn to_rgb(img: &GrayFrameImage) -> RgbImage {
     img.convert()
 }
 
-pub fn is_dark(img: &GrayFrameImage, threshold_percent: u32) -> bool {
-    let hist = gen_hist::<8>(img);
+pub fn is_dark(img: &impl GenericImageView<Pixel = Luma<u8>>, threshold_percent: u32) -> bool {
+    let cropped = center_crop(img);
+    let hist = gen_hist::<12>(cropped.inner());
     let total: u32 = hist.iter().sum();
     let dark_percent = (hist[0] * 100) / total;
     dark_percent >= threshold_percent
@@ -168,14 +185,15 @@ pub fn resize_to_width(img: &RgbImage, target_width: u32) -> RgbImage {
 }
 
 const fn bin<const BINS: usize>(val: u8) -> usize {
-    (val / (((u8::MAX as usize + 1) / BINS) as u8)) as usize
+    let per_bin: u8 = ((u8::MAX as usize + 1) / BINS) as u8;
+    (val / per_bin) as usize
 }
 
 /// Get the histogram from a grayscale image
-fn gen_hist<const BINS: usize>(img: &GrayFrameImage) -> [u32; BINS] {
+fn gen_hist<const BINS: usize>(img: &impl GenericImageView<Pixel = Luma<u8>>) -> [u32; BINS] {
     let mut hist = [0; BINS];
 
-    for p in img.pixels() {
+    for (_, _, p) in img.pixels() {
         let val = p.0[0];
         hist[bin::<BINS>(val)] += 1;
     }
@@ -183,6 +201,6 @@ fn gen_hist<const BINS: usize>(img: &GrayFrameImage) -> [u32; BINS] {
 }
 
 pub fn img_to_dlib(img: &RgbImage) -> Result<ImageMatrix> {
-    let img = resize_to_width(img, 320);
-    Ok(ImageMatrix::from_image(&img))
+    let img = &resize_to_width(img, 320);
+    Ok(ImageMatrix::from_image(img))
 }
