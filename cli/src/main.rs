@@ -4,7 +4,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Ok};
 use clap::Parser;
+use image::{DynamicImage, GenericImageView};
 use log::{debug, info, warn};
+use text_on_image::FontBundle;
 use winit::event::{Event, KeyEvent, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
@@ -66,13 +68,18 @@ fn main() -> anyhow::Result<()> {
     }
     Ok(())
 }
-const RED: image::Rgba<u8> = image::Rgba::<u8>([0, 255, 0, 0]);
+const RED: image::Rgba<u8> = image::Rgba::<u8>([255, 0, 0, 0]);
+const FONT_DATA: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../res/CutiveMono-Regular.ttf"
+));
 
 fn redraw(
     buffer: &mut [u32],
     fr: &FaceRecognizer,
     cam: &mut Cam,
     config: &Config,
+    font_bundle: &FontBundle,
 ) -> anyhow::Result<Instant> {
     let frame = cam.capture()?;
     let start = Instant::now();
@@ -101,6 +108,7 @@ fn redraw(
         info!("No face in frame");
         return Ok(next_frame_at);
     };
+    let encodings = fr.gen_encodings_with_rect(&matrix, &rect);
     // upscale the rect to orig image size
     let rect = Rectangle {
         left: (rect.left as f64 * scale) as i64,
@@ -109,11 +117,52 @@ fn redraw(
         bottom: (rect.bottom as f64 * scale) as i64,
     };
     debug!("writing pixels!");
-    draw_rect(buffer, img.width() as _, rect, RED);
+    // draw_rect(buffer, img.width() as _, rect, RED);
+    let name;
+    if encodings.len() > 1 {
+        name = "Too many!";
+    } else if encodings.len() == 0 {
+        name = "Unknown";
+    } else {
+        let enc = &encodings[0];
+        if let Some(info) = fr.get_enc_info(enc, config) {
+            name = info.label();
+        } else {
+            name = "Not found"
+        }
+    }
+
+    let mut dyn_img = DynamicImage::ImageRgb8(img);
+    text_on_image::text_on_image_draw_debug(
+        &mut dyn_img,
+        name,
+        font_bundle,
+        rect.left.try_into()?,
+        rect.top.try_into()?,
+        text_on_image::TextJustify::Left,
+        text_on_image::VerticalAnchor::Bottom,
+        text_on_image::WrapBehavior::NoWrap,
+    );
+    // draw image and rect on buffer
+    // TODO: Should instead have a method to draw directly on buffer
+    for (i, (c, r, p)) in dyn_img.pixels().enumerate() {
+        let r = r as i64;
+        let c = c as i64;
+        let v = if ((r == rect.top || r == rect.bottom) && (c >= rect.left && c <= rect.right))
+            || ((c == rect.left || c == rect.right) && (r >= rect.top && r <= rect.bottom))
+        {
+            // Draw rect boundary in red
+            RED.0
+        } else {
+            p.0
+        };
+        buffer[i] = u32::from_be_bytes([v[3], v[0], v[1], v[2]]);
+    }
     Ok(next_frame_at)
 }
 
 /// Helper to draw some lines
+#[allow(dead_code)]
 fn draw_rect(buffer: &mut [u32], buffer_w: usize, rect: Rectangle, color: image::Rgba<u8>) {
     let buffer_h = buffer.len() / buffer_w;
     if rect.left >= buffer_w as _ || rect.top >= buffer_h as _ {
@@ -184,6 +233,9 @@ fn handle_add(config: Config, timeout: Duration, label: Option<String>) -> anyho
 }
 
 fn handle_test(config: Config, timeout: Option<Duration>) -> anyhow::Result<()> {
+    let font: rusttype::Font<'static> = rusttype::Font::try_from_bytes(FONT_DATA).unwrap();
+    let font_bundle = text_on_image::FontBundle::new(&font, rusttype::Scale::uniform(30.0), RED);
+
     let fr = FaceRecognizer::new(&config)?;
     let mut cam = Cam::start(config.camera_path())?;
     let (width, height) = cam.resolution()?;
@@ -220,7 +272,8 @@ fn handle_test(config: Config, timeout: Option<Duration>) -> anyhow::Result<()> 
                 // | Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
                 let mut buffer = surface.buffer_mut().unwrap();
                 // the redraw call is blocking- will be limited by the cam fps
-                let next_frame_at = match redraw(&mut buffer, &fr, &mut cam, &config) {
+                let next_frame_at = match redraw(&mut buffer, &fr, &mut cam, &config, &font_bundle)
+                {
                     Result::Ok(next_frame_at) => next_frame_at,
                     Err(err) => {
                         warn!("Failed to draw: {err}");

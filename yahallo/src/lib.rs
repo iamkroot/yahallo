@@ -94,6 +94,13 @@ impl FaceRecognizer {
         self.encoder.get_face_encodings(matrix, &[landmarks], 0)
     }
 
+    /// Given an encoding, try to find the closest match
+    pub fn get_enc_info(&self, encoding: &FaceEncoding, config: &Config) -> Option<&ModelData> {
+        // TODO: For now, we only find the first match below threshold
+        self.known_faces
+            .check_match(encoding, config.match_threshold)
+    }
+
     pub fn check_match(
         &self,
         matrix: &ImageMatrix,
@@ -106,9 +113,7 @@ impl FaceRecognizer {
         let encodings = self.gen_encodings_with_rect(matrix, &rect);
         let encoding = encodings.first().unwrap();
         // TODO: Return more info about the match
-        Ok(self
-            .known_faces
-            .check_match(encoding, config.match_threshold))
+        Ok(self.get_enc_info(encoding, config))
     }
 
     pub fn add_face(&mut self, enc: FaceEncoding, label: Option<String>) -> Result<()> {
