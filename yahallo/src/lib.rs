@@ -189,8 +189,13 @@ pub fn resize_to_width(img: &RgbImage, target_width: u32) -> RgbImage {
     )
 }
 
+const fn int_ceil(a: usize, b: usize) -> usize {
+    (a - 1) / b + 1
+}
+
+
 const fn bin<const BINS: usize>(val: u8) -> usize {
-    let per_bin: u8 = ((u8::MAX as usize + 1) / BINS) as u8;
+    let per_bin: u8 = int_ceil(u8::MAX as usize, BINS) as u8;
     (val / per_bin) as usize
 }
 
