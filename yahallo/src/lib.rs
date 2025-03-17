@@ -2,6 +2,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use config::FDetMode;
+use data::FaceEnc;
 use data::{Faces, ModelData};
 use dlib_face_recognition::{
     FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncoding,
@@ -165,7 +166,7 @@ impl FaceRecognizer {
     }
 
     /// Given an encoding, try to find the closest match
-    pub fn get_enc_info(&self, encoding: &FaceEncoding, config: &Config) -> Option<&ModelData> {
+    pub fn get_enc_info(&self, encoding: &FaceEnc, config: &Config) -> Option<&ModelData> {
         // TODO: For now, we only find the first match below threshold
         self.known_faces
             .check_match(encoding, config.match_threshold)
@@ -183,11 +184,12 @@ impl FaceRecognizer {
         // TODO: Switch to sface
         let encodings = self.gen_encodings_with_rect_dlib(matrix, rect);
         let encoding = encodings.first().unwrap();
+        // let enc = FaceEnc::from(encoding);
         // TODO: Return more info about the match
-        Ok(self.get_enc_info(encoding, config))
+        Ok(self.get_enc_info(&encoding.into(), config))
     }
 
-    pub fn add_face(&mut self, enc: FaceEncoding, label: Option<String>) -> Result<()> {
+    pub fn add_face(&mut self, enc: FaceEnc, label: Option<String>) -> Result<()> {
         self.known_faces.add_face(enc, label)
     }
 

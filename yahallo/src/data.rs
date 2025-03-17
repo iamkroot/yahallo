@@ -3,11 +3,40 @@ use std::io::{BufReader, BufWriter, ErrorKind};
 use std::path::Path;
 use std::time::SystemTime;
 
+use crate::config::FRcgMode;
 use anyhow::{anyhow, Context, Result};
-use dlib_face_recognition::FaceEncoding;
 use serde_json::json;
 
 type FaceId = u64;
+#[derive(Debug)]
+pub struct FaceEnc(FRcgMode, Vec<f64>);
+
+impl From<dlib_face_recognition::FaceEncoding> for FaceEnc {
+    fn from(e: dlib_face_recognition::FaceEncoding) -> Self {
+        Self(FRcgMode::Dlib, e.as_ref().into())
+    }
+}
+
+impl From<&dlib_face_recognition::FaceEncoding> for FaceEnc {
+    fn from(e: &dlib_face_recognition::FaceEncoding) -> Self {
+        Self(FRcgMode::Dlib, e.as_ref().into())
+    }
+}
+
+impl FaceEnc {
+    pub(crate) fn distance(&self, other: &Self) -> f64 {
+        // cosine sim
+        // TODO: check that they are the same model!
+        let n: f64 = self
+            .1
+            .iter()
+            .zip(other.1.iter())
+            .fold(0.0, |p, (x, y)| x * y + p);
+        let a: f64 = self.1.iter().fold(0.0, |p, x| x * x + p);
+        let b: f64 = other.1.iter().fold(0.0, |p, x| x * x + p);
+        n / (a.sqrt() * b.sqrt())
+    }
+}
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -15,11 +44,11 @@ pub struct ModelData {
     time: SystemTime,
     label: String,
     id: FaceId,
-    data: FaceEncoding,
+    data: FaceEnc,
 }
 
 impl ModelData {
-    pub fn new(time: SystemTime, label: String, id: FaceId, data: FaceEncoding) -> Self {
+    pub fn new(time: SystemTime, label: String, id: FaceId, data: FaceEnc) -> Self {
         Self {
             time,
             label,
@@ -44,7 +73,20 @@ impl ModelData {
                 .as_u64()
                 .ok_or_else(|| anyhow!("invalid 'id' in {v}"))?,
             data: {
-                let mut arr = v["data"]
+                let mut v = v;
+                let frcg_mode = if v["data"].is_object() {
+                    v = &v["data"]["emb"];
+                    if v["data"]["model"] == "dlib" {
+                        FRcgMode::Dlib
+                    } else {
+                        FRcgMode::SFace
+                    }
+                } else {
+                    v = &v["data"];
+                    // dlib by default
+                    FRcgMode::Dlib
+                };
+                let mut arr = v
                     .as_array()
                     .ok_or_else(|| anyhow!("invalid 'data' in {v}"))?;
                 // in case it is a nested array- extract first value
@@ -56,11 +98,11 @@ impl ModelData {
                 {
                     arr = inner;
                 }
-                let v = arr
+                let emb = arr
                     .iter()
                     .map(|f| f.as_f64().ok_or_else(|| anyhow!("Invalid f64 {f}")))
                     .collect::<Result<Vec<f64>>>()?;
-                FaceEncoding::from_vec(&v).map_err(|e| anyhow!("Invalid face encoding: {e}"))?
+                FaceEnc(frcg_mode, emb)
             },
         })
     }
@@ -75,14 +117,17 @@ impl ModelData {
             "time": time,
             "label": self.label,
             "id": self.id,
-            "data": self.data.as_ref()
+            "data": {
+                "model": if self.data.0 == FRcgMode::Dlib {"dlib"} else {"sface"},
+                "emb": self.data.1
+            }
         })
     }
 
-    pub fn encoding(&self) -> &FaceEncoding {
+    pub fn encoding(&self) -> &FaceEnc {
         &self.data
     }
-    
+
     pub fn label(&self) -> &str {
         &self.label
     }
@@ -135,7 +180,7 @@ impl Faces {
         self.0.is_empty()
     }
 
-    pub(crate) fn add_face(&mut self, enc: FaceEncoding, label: Option<String>) -> Result<()> {
+    pub(crate) fn add_face(&mut self, enc: FaceEnc, label: Option<String>) -> Result<()> {
         // TODO: Check if too similar
         let new_id = self.0.last().map_or(1, |d| d.id + 1);
         let data = ModelData {
@@ -148,11 +193,7 @@ impl Faces {
         Ok(())
     }
 
-    pub(crate) fn check_match(
-        &self,
-        encoding: &FaceEncoding,
-        threshold: f64,
-    ) -> Option<&ModelData> {
+    pub(crate) fn check_match(&self, encoding: &FaceEnc, threshold: f64) -> Option<&ModelData> {
         log::info!("Checking against {} known faces", self.0.len());
         self.0
             .iter()

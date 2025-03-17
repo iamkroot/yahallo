@@ -91,7 +91,7 @@ fn name_for_face<'a>(
         "Unknown"
     } else {
         let enc = &encodings[0];
-        if let Some(info) = fr.get_enc_info(enc, config) {
+        if let Some(info) = fr.get_enc_info(&enc.into(), config) {
             info.label()
         } else {
             "Not found"
@@ -237,7 +237,7 @@ fn handle_add(config: Config, timeout: Duration, label: Option<String>) -> anyho
         };
         let encodings = fr.gen_encodings_with_rect_dlib(&img, rect);
         let encoding = encodings.first().unwrap();
-        fr.add_face(encoding.clone(), label)?;
+        fr.add_face(encoding.into(), label)?;
         fr.dump_faces_file(config.faces_file())?;
         break;
     }
