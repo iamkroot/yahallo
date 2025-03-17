@@ -26,7 +26,7 @@ pub struct Config {
     /// maximum percent of dark pixels in frame to allow face recog
     dark_threshold: u32,
     pub(crate) fdet_mode: FDetMode,
-    pub(crate) frcg_mode: FRcgMode,
+    pub frcg_mode: FRcgMode,
 }
 
 impl Config {

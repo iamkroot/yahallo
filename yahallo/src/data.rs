@@ -8,14 +8,30 @@ use anyhow::{anyhow, Context, Result};
 use serde_json::json;
 
 type FaceId = u64;
-#[derive(Debug)]
+
+#[derive(Debug, Clone)]
 pub struct FaceEnc(FRcgMode, Vec<f64>);
 
+// TODO: This should be a trait rather than a struct
+//  even an enum would be fine.
 pub struct FaceEncs(Vec<FaceEnc>);
+
+impl std::ops::Deref for FaceEncs {
+    type Target = Vec<FaceEnc>;
+    fn deref(&self) -> &Vec<FaceEnc> {
+        &self.0
+    }
+}
 
 impl From<FaceEnc> for FaceEncs {
     fn from(f: FaceEnc) -> Self {
         Self(vec![f])
+    }
+}
+
+impl From<dlib_face_recognition::FaceEncodings> for FaceEncs {
+    fn from(f: dlib_face_recognition::FaceEncodings) -> Self {
+        Self(f.as_ref().iter().map(|e| e.into()).collect())
     }
 }
 
@@ -33,7 +49,7 @@ impl From<&dlib_face_recognition::FaceEncoding> for FaceEnc {
 
 impl FaceEnc {
     pub(crate) fn from_sface(v: &ort::value::Tensor<f32>) -> Result<Self> {
-        assert_eq!(v.shape()?, &[1, 512]);
+        assert_eq!(v.shape()?, &[1, 128]);
         Ok(Self(
             FRcgMode::SFace,
             (v.extract_raw_tensor().1)
@@ -227,7 +243,7 @@ impl Faces {
             .iter()
             .find(|known| known.encoding().distance(encoding) <= threshold)
             .inspect(|v| {
-                log::trace!(target: "enc_match",
+                log::debug!(target: "enc_match",
                     "Matched: {} with distance {}",
                     v.label,
                     v.encoding().distance(encoding)

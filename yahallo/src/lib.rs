@@ -93,13 +93,36 @@ struct SFace {
 }
 
 impl SFace {
-    fn init(path: &Path) -> Result<Self> {
+    fn new(path: &Path) -> Result<Self> {
         Ok(Self {
             session: Session::builder()?
                 .with_optimization_level(GraphOptimizationLevel::Level1)?
                 .with_intra_threads(4)?
                 .commit_from_file(path)?,
         })
+    }
+}
+
+struct DlibRcg {
+    lm_pred: LandmarkPredictor,
+    encoder: FaceEncoderNetwork,
+}
+
+impl DlibRcg {
+    fn new(config: &Config) -> Result<Self> {
+        let lm_path = config.model_path("shape_predictor_5_face_landmarks.dat")?;
+        let lmt = std::thread::spawn(move || LandmarkPredictor::open(lm_path));
+        let enc_path = config.model_path("dlib_face_recognition_resnet_model_v1.dat")?;
+        let ent = std::thread::spawn(move || FaceEncoderNetwork::open(enc_path));
+        let lm_pred = lmt
+            .join()
+            .map_err(|_| anyhow::format_err!("LMPred init failed!"))?
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let encoder = ent
+            .join()
+            .map_err(|_| anyhow::format_err!("Enc init failed!"))?
+            .map_err(|e| anyhow::anyhow!(e))?;
+        Ok(Self { lm_pred, encoder })
     }
 }
 
@@ -123,7 +146,7 @@ impl FaceRecognizer {
         let enc_path = config.model_path("dlib_face_recognition_resnet_model_v1.dat")?;
         let ent = std::thread::spawn(move || FaceEncoderNetwork::open(enc_path));
         let sface_path = config.model_path("face_recognition_sface_2021dec.onnx")?;
-        let sfacet = std::thread::spawn(move || SFace::init(&sface_path));
+        let sfacet = std::thread::spawn(move || SFace::new(&sface_path));
 
         let fdet = if config.fdet_mode == FDetMode::Dlib {
             FaceDet(Box::new(
@@ -169,16 +192,16 @@ impl FaceRecognizer {
         Ok(locs.first().cloned())
     }
 
-    pub fn gen_encodings(&self, matrix: &image::DynamicImage) -> YahalloResult<FaceEncodings> {
+    pub fn gen_encodings(&self, matrix: &image::DynamicImage) -> YahalloResult<FaceEncs> {
         let rect = self.get_face_rect(matrix)?.ok_or(Error::NoFace)?;
-        Ok(self.gen_encodings_with_rect_dlib(matrix, rect))
+        Ok(self.gen_encodings_with_rect_sface(matrix, rect))
     }
 
     pub fn gen_encodings_with_rect_dlib(
         &self,
         matrix: &image::DynamicImage,
         rect: Rect,
-    ) -> FaceEncodings {
+    ) -> FaceEncs {
         let dlib_image = img_to_dlib(matrix).unwrap();
         let dlib_rect = dlib_face_recognition::Rectangle {
             left: rect.x as _,
@@ -189,6 +212,7 @@ impl FaceRecognizer {
         let landmarks = self.lm_pred.face_landmarks(&dlib_image, &dlib_rect);
         self.encoder
             .get_face_encodings(&dlib_image, &[landmarks], 0)
+            .into()
     }
 
     pub fn gen_encodings_with_rect_sface(
@@ -196,6 +220,7 @@ impl FaceRecognizer {
         matrix: &image::DynamicImage,
         rect: Rect,
     ) -> FaceEncs {
+        // TODO: Add ModelError instead of unwrapping
         let cropped = matrix.crop_imm(rect.x, rect.y, rect.width, rect.height);
         let sface_tensor = img_to_sface(&cropped).unwrap();
         let outputs = self
@@ -225,11 +250,11 @@ impl FaceRecognizer {
             return Ok(None);
         };
         // TODO: Switch to sface
-        let encodings = self.gen_encodings_with_rect_dlib(matrix, rect);
+        let encodings = self.gen_encodings_with_rect_sface(matrix, rect);
         let encoding = encodings.first().unwrap();
         // let enc = FaceEnc::from(encoding);
         // TODO: Return more info about the match
-        Ok(self.get_enc_info(&encoding.into(), config))
+        Ok(self.get_enc_info(encoding, config))
     }
 
     pub fn add_face(&mut self, enc: FaceEnc, label: Option<String>) -> Result<()> {
@@ -337,7 +362,7 @@ pub fn img_to_dlib(img: &DynamicImage) -> Result<ImageMatrix> {
 }
 
 pub fn img_to_sface(img: &DynamicImage) -> Result<ort::value::Tensor<f32>> {
-    let img = resize_to_width(img, 112);
+    let img = img.resize_exact(112, 112, image::imageops::FilterType::Nearest);
     let data = img.to_rgb32f().into_vec();
     Ok(ort::value::Tensor::from_array((
         [1usize, 3, 112, 112],

@@ -14,10 +14,7 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowBuilder;
 use yahallo::camera::Cam;
 use yahallo::config::{Config, FDetMode, FRcgMode};
-use yahallo::{
-    img_to_dlib, is_dark, process_image, resize_to_width, to_rgb, FaceRecognizer, ImageMatrix,
-    Rectangle,
-};
+use yahallo::{is_dark, process_image, resize_to_width, to_rgb, FaceRecognizer, Rectangle};
 
 #[derive(Debug, Parser, Clone)]
 #[command(name = "yahallo")]
@@ -60,7 +57,7 @@ fn main() -> anyhow::Result<()> {
         0.6,
         30,
         FDetMode::YuNet,
-        FRcgMode::Dlib,
+        FRcgMode::SFace,
     )?;
     match args.command {
         Commands::Add { label, timeout } => handle_add(config, timeout.into(), label)?,
@@ -84,14 +81,14 @@ fn name_for_face<'a>(
     rect: Rect,
 ) -> &'a str {
     // return "Unknown";
-    let encodings = fr.gen_encodings_with_rect_dlib(img, rect);
+    let encodings = fr.gen_encodings_with_rect_sface(img, rect);
     if encodings.len() > 1 {
         "Too many!"
     } else if encodings.len() == 0 {
         "Unknown"
     } else {
         let enc = &encodings[0];
-        if let Some(info) = fr.get_enc_info(&enc.into(), config) {
+        if let Some(info) = fr.get_enc_info(enc, config) {
             info.label()
         } else {
             "Not found"
@@ -235,9 +232,9 @@ fn handle_add(config: Config, timeout: Duration, label: Option<String>) -> anyho
             info!("No face in frame");
             continue;
         };
-        let encodings = fr.gen_encodings_with_rect_dlib(&img, rect);
+        let encodings = fr.gen_encodings_with_rect_sface(&img, rect);
         let encoding = encodings.first().unwrap();
-        fr.add_face(encoding.into(), label)?;
+        fr.add_face(encoding.clone(), label)?;
         fr.dump_faces_file(config.faces_file())?;
         break;
     }
