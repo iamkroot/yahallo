@@ -83,7 +83,7 @@ fn name_for_face<'a>(
     img: &DynamicImage,
     rect: Rect,
 ) -> &'a str {
-    return "Unknown";
+    // return "Unknown";
     let encodings = fr.gen_encodings_with_rect_dlib(img, rect);
     if encodings.len() > 1 {
         "Too many!"

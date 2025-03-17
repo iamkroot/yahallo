@@ -11,6 +11,14 @@ type FaceId = u64;
 #[derive(Debug)]
 pub struct FaceEnc(FRcgMode, Vec<f64>);
 
+pub struct FaceEncs(Vec<FaceEnc>);
+
+impl From<FaceEnc> for FaceEncs {
+    fn from(f: FaceEnc) -> Self {
+        Self(vec![f])
+    }
+}
+
 impl From<dlib_face_recognition::FaceEncoding> for FaceEnc {
     fn from(e: dlib_face_recognition::FaceEncoding) -> Self {
         Self(FRcgMode::Dlib, e.as_ref().into())
@@ -24,6 +32,17 @@ impl From<&dlib_face_recognition::FaceEncoding> for FaceEnc {
 }
 
 impl FaceEnc {
+    pub(crate) fn from_sface(v: &ort::value::Tensor<f32>) -> Result<Self> {
+        assert_eq!(v.shape()?, &[1, 512]);
+        Ok(Self(
+            FRcgMode::SFace,
+            (v.extract_raw_tensor().1)
+                .iter()
+                .map(|&v| f64::from(v))
+                .collect(),
+        ))
+    }
+
     pub(crate) fn distance(&self, other: &Self) -> f64 {
         // cosine distance
         // TODO: check that they are the same model!

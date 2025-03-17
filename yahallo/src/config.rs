@@ -19,7 +19,7 @@ pub struct Config {
     camera_path: PathBuf,
     // Could use the "embed-nn" feature of dlib to avoid this.
     // To get a completely independent binary, we would also have to enable the "build-native" flag of dlib
-    dlib_model_dir: PathBuf,
+    model_dir: PathBuf,
     faces_file: PathBuf,
     /// Euclidean distance
     pub(crate) match_threshold: f64,
@@ -47,7 +47,7 @@ impl Config {
         }
         Ok(Self {
             camera_path,
-            dlib_model_dir,
+            model_dir: dlib_model_dir,
             faces_file,
             match_threshold,
             dark_threshold,
@@ -56,10 +56,10 @@ impl Config {
         })
     }
 
-    pub(crate) fn dlib_model_dat(&self, filename: &str) -> Result<PathBuf> {
-        let file = self.dlib_model_dir.join(filename);
+    pub(crate) fn model_path(&self, filename: &str) -> Result<PathBuf> {
+        let file = self.model_dir.join(filename);
         if !file.exists() {
-            bail!("Dlib file not found {}", file.display())
+            bail!("Model file not found {}", file.display())
         } else {
             Ok(file)
         }

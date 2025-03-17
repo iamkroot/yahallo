@@ -1,8 +1,10 @@
 use std::path::Path;
+use std::path::PathBuf;
 
 use anyhow::Result;
-use config::FDetMode;
+use config::{FDetMode, FRcgMode};
 use data::FaceEnc;
+use data::FaceEncs;
 use data::{Faces, ModelData};
 use dlib_face_recognition::{
     FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncoding,
@@ -15,6 +17,7 @@ use image::DynamicImage;
 use image::GenericImageView;
 use image::Luma;
 use log::warn;
+use ort::session::{builder::GraphOptimizationLevel, Session};
 use rscam::Frame;
 
 pub mod camera;
@@ -84,10 +87,27 @@ impl MyFaceDet for YuNetFaceDet {
     }
 }
 
+#[derive(Debug)]
+struct SFace {
+    session: Session,
+}
+
+impl SFace {
+    fn init(path: &Path) -> Result<Self> {
+        Ok(Self {
+            session: Session::builder()?
+                .with_optimization_level(GraphOptimizationLevel::Level1)?
+                .with_intra_threads(4)?
+                .commit_from_file(path)?,
+        })
+    }
+}
+
 pub struct FaceRecognizer {
     fdet: FaceDet,
     lm_pred: LandmarkPredictor,
     encoder: FaceEncoderNetwork,
+    sface: SFace,
     known_faces: Faces,
 }
 
@@ -98,10 +118,12 @@ impl FaceRecognizer {
         } else {
             None
         };
-        let lm_path = config.dlib_model_dat("shape_predictor_5_face_landmarks.dat")?;
+        let lm_path = config.model_path("shape_predictor_5_face_landmarks.dat")?;
         let lmt = std::thread::spawn(move || LandmarkPredictor::open(lm_path));
-        let enc_path = config.dlib_model_dat("dlib_face_recognition_resnet_model_v1.dat")?;
+        let enc_path = config.model_path("dlib_face_recognition_resnet_model_v1.dat")?;
         let ent = std::thread::spawn(move || FaceEncoderNetwork::open(enc_path));
+        let sface_path = config.model_path("face_recognition_sface_2021dec.onnx")?;
+        let sfacet = std::thread::spawn(move || SFace::init(&sface_path));
 
         let fdet = if config.fdet_mode == FDetMode::Dlib {
             FaceDet(Box::new(
@@ -121,13 +143,17 @@ impl FaceRecognizer {
             .join()
             .map_err(|_| anyhow::format_err!("Enc init failed!"))?
             .map_err(|e| anyhow::anyhow!(e))?;
-
+        let sface = sfacet
+            .join()
+            .map_err(|_| anyhow::format_err!("SFace init failed!"))?
+            .map_err(|e| anyhow::anyhow!(e))?;
         let faces_file = config.faces_file();
         let encs = Faces::from_file(faces_file)?;
         Ok(Self {
             fdet,
             lm_pred,
             encoder,
+            sface,
             known_faces: encs,
         })
     }
@@ -163,6 +189,23 @@ impl FaceRecognizer {
         let landmarks = self.lm_pred.face_landmarks(&dlib_image, &dlib_rect);
         self.encoder
             .get_face_encodings(&dlib_image, &[landmarks], 0)
+    }
+
+    pub fn gen_encodings_with_rect_sface(
+        &self,
+        matrix: &image::DynamicImage,
+        rect: Rect,
+    ) -> FaceEncs {
+        let cropped = matrix.crop_imm(rect.x, rect.y, rect.width, rect.height);
+        let sface_tensor = img_to_sface(&cropped).unwrap();
+        let outputs = self
+            .sface
+            .session
+            .run(ort::inputs!["data" => sface_tensor].unwrap())
+            .unwrap();
+        let predictions = outputs["fc1"].downcast_ref().unwrap();
+        let emb = FaceEnc::from_sface(&predictions).unwrap();
+        emb.into()
     }
 
     /// Given an encoding, try to find the closest match
@@ -291,4 +334,13 @@ fn gen_hist<const BINS: usize>(img: &impl GenericImageView<Pixel = Luma<u8>>) ->
 pub fn img_to_dlib(img: &DynamicImage) -> Result<ImageMatrix> {
     let img = resize_to_width(img, 320);
     Ok(ImageMatrix::from_image(&img.to_rgb8()))
+}
+
+pub fn img_to_sface(img: &DynamicImage) -> Result<ort::value::Tensor<f32>> {
+    let img = resize_to_width(img, 112);
+    let data = img.to_rgb32f().into_vec();
+    Ok(ort::value::Tensor::from_array((
+        [1usize, 3, 112, 112],
+        data,
+    ))?)
 }
