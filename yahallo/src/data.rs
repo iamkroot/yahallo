@@ -25,16 +25,25 @@ impl From<&dlib_face_recognition::FaceEncoding> for FaceEnc {
 
 impl FaceEnc {
     pub(crate) fn distance(&self, other: &Self) -> f64 {
-        // cosine sim
+        // cosine distance
         // TODO: check that they are the same model!
-        let n: f64 = self
-            .1
-            .iter()
-            .zip(other.1.iter())
-            .fold(0.0, |p, (x, y)| x * y + p);
-        let a: f64 = self.1.iter().fold(0.0, |p, x| x * x + p);
-        let b: f64 = other.1.iter().fold(0.0, |p, x| x * x + p);
-        n / (a.sqrt() * b.sqrt())
+        const METRIC: &str = "euclidean";
+        if METRIC == "cosine" {
+            let n: f64 = self
+                .1
+                .iter()
+                .zip(other.1.iter())
+                .fold(0.0, |p, (x, y)| x * y + p);
+            let a: f64 = self.1.iter().fold(0.0, |p, x| x * x + p);
+            let b: f64 = other.1.iter().fold(0.0, |p, x| x * x + p);
+            1.0 - (n / (a.sqrt() * b.sqrt()))
+        } else {
+            self.1
+                .iter()
+                .zip(other.1.iter())
+                .fold(0.0, |p, (x, y)| (x - y).powi(2) + p)
+                .sqrt()
+        }
     }
 }
 
