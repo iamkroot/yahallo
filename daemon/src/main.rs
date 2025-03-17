@@ -9,7 +9,7 @@ use dbus_crossroads::{Context, Crossroads};
 
 use anyhow::bail;
 use log::{info, warn};
-use yahallo::{camera::Cam, config::Config, img_to_dlib, process_image, FaceRecognizer};
+use yahallo::{camera::Cam, config::Config, process_image, FaceRecognizer};
 use yahallo::{is_dark, to_rgb, DbusResult, Error, YahalloResult};
 
 struct State {
@@ -75,8 +75,9 @@ fn check_match(
             info!("looking for matches");
         }
         let img = to_rgb(&img);
-        let matrix = img_to_dlib(&img)?;
-        if let Some(model) = fr.check_match(&matrix, config)? {
+        // let matrix = img_to_dlib(&img)?;
+        // let img_ = image::DynamicImage::ImageRgb8(img);
+        if let Some(model) = fr.check_match(&img, config)? {
             println!("{}", model.label());
             // TODO: Check username!!
             break;

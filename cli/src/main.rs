@@ -103,18 +103,18 @@ fn redraw(
     }
     let img = to_rgb(&img);
     let resized = resize_to_width(&img, WIDTH as _);
-    let matrix = ImageMatrix::from_image(&resized);
-    let Some(rect) = fr.get_face_rect(&matrix)? else {
+    // let matrix = ImageMatrix::from_image(&resized.to_rgb8());
+    let Some(rect) = fr.get_face_rect(&resized)? else {
         info!("No face in frame");
         return Ok(next_frame_at);
     };
-    let encodings = fr.gen_encodings_with_rect(&matrix, &rect);
+    let encodings = fr.gen_encodings_with_rect_dlib(&resized, rect);
     // upscale the rect to orig image size
     let rect = Rectangle {
-        left: (rect.left as f64 * scale) as i64,
-        top: (rect.top as f64 * scale) as i64,
-        right: (rect.right as f64 * scale) as i64,
-        bottom: (rect.bottom as f64 * scale) as i64,
+        left: (rect.x as f64 * scale) as i64,
+        top: (rect.y as f64 * scale) as i64,
+        right: ((rect.x + rect.width) as f64 * scale) as i64,
+        bottom: ((rect.y + rect.height) as f64 * scale) as i64,
     };
     debug!("writing pixels!");
     // draw_rect(buffer, img.width() as _, rect, RED);
@@ -132,7 +132,7 @@ fn redraw(
         }
     }
 
-    let mut dyn_img = DynamicImage::ImageRgb8(img);
+    let mut dyn_img = img;
     text_on_image::text_on_image_draw_debug(
         &mut dyn_img,
         name,
@@ -218,12 +218,12 @@ fn handle_add(config: Config, timeout: Duration, label: Option<String>) -> anyho
             continue;
         }
         let img = to_rgb(&img);
-        let matrix = img_to_dlib(&img)?;
-        let Some(rect) = fr.get_face_rect(&matrix)? else {
+        // let matrix = img_to_dlib(&img)?;
+        let Some(rect) = fr.get_face_rect(&img)? else {
             info!("No face in frame");
             continue;
         };
-        let encodings = fr.gen_encodings_with_rect(&matrix, &rect);
+        let encodings = fr.gen_encodings_with_rect_dlib(&img, rect);
         let encoding = encodings.first().unwrap();
         fr.add_face(encoding.clone(), label)?;
         fr.dump_faces_file(config.faces_file())?;

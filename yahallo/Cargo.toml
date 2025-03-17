@@ -14,3 +14,4 @@ rscam = "0.5.5"
 log = { workspace = true }
 thiserror = "1.0.56"
 dbus = { workspace = true }
+rusty-yunet = { git = "https://github.com/kirinokirino/rusty-yunet", rev = "b819575" }

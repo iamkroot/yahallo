@@ -4,10 +4,12 @@ use anyhow::Result;
 use data::{Faces, ModelData};
 use dlib_face_recognition::{
     FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncoding,
-    FaceEncodings, FaceLocations, LandmarkPredictor, LandmarkPredictorTrait,
+    FaceEncodings, LandmarkPredictor, LandmarkPredictorTrait,
 };
 pub use dlib_face_recognition::{ImageMatrix, Rectangle};
 use image::buffer::ConvertBuffer;
+use image::math::Rect;
+use image::DynamicImage;
 use image::GenericImageView;
 use image::Luma;
 use image::RgbImage;
@@ -24,15 +26,62 @@ use crate::config::Config;
 pub use crate::error::{DbusResult, Error, YahalloResult};
 pub use crate::utils::Stopwatch;
 
-struct FaceDet(Box<dyn FaceDetectorTrait>);
+struct FaceDet(Box<dyn MyFaceDet>);
 
-impl FaceDetectorTrait for FaceDet {
-    fn face_locations(&self, image: &dlib_face_recognition::ImageMatrix) -> FaceLocations {
-        self.0.face_locations(image)
+trait MyFaceDet {
+    fn face_locations(&self, img: &image::DynamicImage) -> Result<Vec<Rect>>;
+}
+
+impl MyFaceDet for FaceDet {
+    fn face_locations(&self, img: &image::DynamicImage) -> Result<Vec<Rect>> {
+        self.0.face_locations(img)
     }
 }
 
+impl MyFaceDet for dlib_face_recognition::FaceDetector {
+    fn face_locations(&self, img: &image::DynamicImage) -> Result<Vec<Rect>> {
+        let mat = img_to_dlib(img)?;
+        let locs = FaceDetectorTrait::face_locations(self, &mat);
+        Ok(locs
+            .iter()
+            .map(|loc| Rect {
+                x: loc.left as _,
+                y: loc.top as _,
+                width: (loc.right - loc.left) as _,
+                height: (loc.bottom - loc.top) as _,
+            })
+            .collect())
+        // todo!()
+    }
+}
+
+// TODO: Custom image struct that basically caches the different variants (dynamic image, dlib image, resized, etc.)
+
 unsafe impl Send for FaceDet {}
+
+use rusty_yunet::detect_faces;
+
+struct YuNetFaceDet {}
+
+mod image_utils;
+
+impl MyFaceDet for YuNetFaceDet {
+    fn face_locations(&self, img: &image::DynamicImage) -> Result<Vec<Rect>> {
+        let ib: image_utils::BgrImage = image_utils::dyn_to_bgr(img);
+        Ok(
+            detect_faces(ib.as_raw(), ib.width().try_into()?, ib.height().try_into()?)?
+                .into_iter()
+                .map(|f| f.rectangle())
+                .map(|r| Rect {
+                    x: r.x as u32,
+                    y: r.y as u32,
+                    width: r.w as u32,
+                    height: r.h as u32,
+                })
+                .collect(),
+        )
+    }
+}
 
 pub struct FaceRecognizer {
     fdet: FaceDet,
@@ -72,9 +121,9 @@ impl FaceRecognizer {
     }
 
     /// Returns largest face rect on image, if it is available
-    pub fn get_face_rect(&self, matrix: &ImageMatrix) -> YahalloResult<Option<Rectangle>> {
+    pub fn get_face_rect(&self, matrix: &image::DynamicImage) -> YahalloResult<Option<Rect>> {
         // TODO: Actually return the largest :P
-        let locs = self.fdet.face_locations(matrix);
+        let locs = self.fdet.face_locations(matrix)?;
         if locs.len() > 1 {
             warn!("Expected just one face, found {}", locs.len());
             return Err(Error::MultipleFaces);
@@ -82,16 +131,26 @@ impl FaceRecognizer {
         Ok(locs.first().cloned())
     }
 
-    pub fn gen_encodings(&self, matrix: &ImageMatrix) -> YahalloResult<FaceEncodings> {
-        let rect = &self.get_face_rect(matrix)?.ok_or(Error::NoFace)?;
-        let landmarks = self.lm_pred.face_landmarks(matrix, rect);
-        let encodings = self.encoder.get_face_encodings(matrix, &[landmarks], 0);
-        Ok(encodings)
+    pub fn gen_encodings(&self, matrix: &image::DynamicImage) -> YahalloResult<FaceEncodings> {
+        let rect = self.get_face_rect(matrix)?.ok_or(Error::NoFace)?;
+        Ok(self.gen_encodings_with_rect_dlib(matrix, rect))
     }
 
-    pub fn gen_encodings_with_rect(&self, matrix: &ImageMatrix, rect: &Rectangle) -> FaceEncodings {
-        let landmarks = self.lm_pred.face_landmarks(matrix, rect);
-        self.encoder.get_face_encodings(matrix, &[landmarks], 0)
+    pub fn gen_encodings_with_rect_dlib(
+        &self,
+        matrix: &image::DynamicImage,
+        rect: Rect,
+    ) -> FaceEncodings {
+        let dlib_image = img_to_dlib(matrix).unwrap();
+        let dlib_rect = dlib_face_recognition::Rectangle {
+            left: rect.x as _,
+            top: rect.y as _,
+            right: (rect.x + rect.width) as _,
+            bottom: (rect.y + rect.height) as _,
+        };
+        let landmarks = self.lm_pred.face_landmarks(&dlib_image, &dlib_rect);
+        self.encoder
+            .get_face_encodings(&dlib_image, &[landmarks], 0)
     }
 
     /// Given an encoding, try to find the closest match
@@ -103,14 +162,15 @@ impl FaceRecognizer {
 
     pub fn check_match(
         &self,
-        matrix: &ImageMatrix,
+        matrix: &image::DynamicImage,
         config: &Config,
     ) -> YahalloResult<Option<&ModelData>> {
         // TODO: Check staleness of self.known_faces
         let Some(rect) = self.get_face_rect(matrix)? else {
             return Ok(None);
         };
-        let encodings = self.gen_encodings_with_rect(matrix, &rect);
+        // TODO: Switch to sface
+        let encodings = self.gen_encodings_with_rect_dlib(matrix, rect);
         let encoding = encodings.first().unwrap();
         // TODO: Return more info about the match
         Ok(self.get_enc_info(encoding, config))
@@ -163,8 +223,8 @@ pub fn process_image(frame: Frame) -> Result<GrayFrameImage> {
     .ok_or(anyhow::anyhow!("no img from cam frame"))
 }
 
-pub fn to_rgb(img: &GrayFrameImage) -> RgbImage {
-    img.convert()
+pub fn to_rgb(img: &GrayFrameImage) -> image::DynamicImage {
+    image::DynamicImage::ImageRgb8(img.convert())
 }
 
 pub fn is_dark(img: &impl GenericImageView<Pixel = Luma<u8>>, threshold_percent: u32) -> bool {
@@ -176,23 +236,28 @@ pub fn is_dark(img: &impl GenericImageView<Pixel = Luma<u8>>, threshold_percent:
 }
 
 /// Resize to target width preserving the aspect ratio
-pub fn resize_to_width(img: &RgbImage, target_width: u32) -> RgbImage {
+pub fn resize_to_width(img: &DynamicImage, target_width: u32) -> DynamicImage {
     let w = img.width();
     let aspect_ratio = w as f64 / img.height() as f64;
     let target_height = (target_width as f64 / aspect_ratio).round() as u32;
     // TODO: Need to make sure height is divisible by x??
-    image::imageops::resize(
-        img,
+    img.resize(
         target_width,
         target_height,
         image::imageops::FilterType::Nearest,
     )
+    // todo!()
+    // (image::imageops::resize(
+    //     img,
+    //     target_width,
+    //     target_height,
+    //     image::imageops::FilterType::Nearest,
+    // ))
 }
 
 const fn int_ceil(a: usize, b: usize) -> usize {
     (a - 1) / b + 1
 }
-
 
 const fn bin<const BINS: usize>(val: u8) -> usize {
     let per_bin: u8 = int_ceil(u8::MAX as usize, BINS) as u8;
@@ -210,7 +275,7 @@ fn gen_hist<const BINS: usize>(img: &impl GenericImageView<Pixel = Luma<u8>>) ->
     hist
 }
 
-pub fn img_to_dlib(img: &RgbImage) -> Result<ImageMatrix> {
-    let img = &resize_to_width(img, 320);
-    Ok(ImageMatrix::from_image(img))
+pub fn img_to_dlib(img: &DynamicImage) -> Result<ImageMatrix> {
+    let img = resize_to_width(img, 320);
+    Ok(ImageMatrix::from_image(&img.to_rgb8()))
 }
