@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Ok};
 use clap::Parser;
+use image::math::Rect;
 use image::{DynamicImage, GenericImageView};
 use log::{debug, info, warn};
 use text_on_image::FontBundle;
@@ -12,7 +13,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowBuilder;
 use yahallo::camera::Cam;
-use yahallo::config::Config;
+use yahallo::config::{Config, FDetMode, FRcgMode};
 use yahallo::{
     img_to_dlib, is_dark, process_image, resize_to_width, to_rgb, FaceRecognizer, ImageMatrix,
     Rectangle,
@@ -58,6 +59,8 @@ fn main() -> anyhow::Result<()> {
         PathBuf::from("data/faces.json"),
         0.6,
         30,
+        FDetMode::YuNet,
+        FRcgMode::Dlib,
     )?;
     match args.command {
         Commands::Add { label, timeout } => handle_add(config, timeout.into(), label)?,
@@ -73,6 +76,28 @@ const FONT_DATA: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../res/CutiveMono-Regular.ttf"
 ));
+
+fn name_for_face<'a>(
+    fr: &'a FaceRecognizer,
+    config: &Config,
+    img: &DynamicImage,
+    rect: Rect,
+) -> &'a str {
+    return "Unknown";
+    let encodings = fr.gen_encodings_with_rect_dlib(img, rect);
+    if encodings.len() > 1 {
+        "Too many!"
+    } else if encodings.len() == 0 {
+        "Unknown"
+    } else {
+        let enc = &encodings[0];
+        if let Some(info) = fr.get_enc_info(enc, config) {
+            info.label()
+        } else {
+            "Not found"
+        }
+    }
+}
 
 fn redraw(
     buffer: &mut [u32],
@@ -108,7 +133,7 @@ fn redraw(
         info!("No face in frame");
         return Ok(next_frame_at);
     };
-    let encodings = fr.gen_encodings_with_rect_dlib(&resized, rect);
+    let name = name_for_face(fr, config, &resized, rect);
     // upscale the rect to orig image size
     let rect = Rectangle {
         left: (rect.x as f64 * scale) as i64,
@@ -118,19 +143,6 @@ fn redraw(
     };
     debug!("writing pixels!");
     // draw_rect(buffer, img.width() as _, rect, RED);
-    let name;
-    if encodings.len() > 1 {
-        name = "Too many!";
-    } else if encodings.len() == 0 {
-        name = "Unknown";
-    } else {
-        let enc = &encodings[0];
-        if let Some(info) = fr.get_enc_info(enc, config) {
-            name = info.label();
-        } else {
-            name = "Not found"
-        }
-    }
 
     let mut dyn_img = img;
     text_on_image::text_on_image_draw_debug(

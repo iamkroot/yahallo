@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
+use config::FDetMode;
 use data::{Faces, ModelData};
 use dlib_face_recognition::{
     FaceDetector, FaceDetectorTrait, FaceEncoderNetwork, FaceEncoderTrait, FaceEncoding,
@@ -12,7 +13,6 @@ use image::math::Rect;
 use image::DynamicImage;
 use image::GenericImageView;
 use image::Luma;
-use image::RgbImage;
 use log::warn;
 use rscam::Frame;
 
@@ -92,15 +92,26 @@ pub struct FaceRecognizer {
 
 impl FaceRecognizer {
     pub fn new(config: &Config) -> Result<Self> {
-        let fdt = std::thread::spawn(FaceDetector::new);
+        let fdt = if config.fdet_mode == FDetMode::Dlib {
+            Some(std::thread::spawn(FaceDetector::new))
+        } else {
+            None
+        };
         let lm_path = config.dlib_model_dat("shape_predictor_5_face_landmarks.dat")?;
         let lmt = std::thread::spawn(move || LandmarkPredictor::open(lm_path));
         let enc_path = config.dlib_model_dat("dlib_face_recognition_resnet_model_v1.dat")?;
         let ent = std::thread::spawn(move || FaceEncoderNetwork::open(enc_path));
-        let fdet = fdt
-            .join()
-            // TODO: Print the panics properly instead of ignoring them
-            .map_err(|_| anyhow::format_err!("FDet init failed!"))?;
+
+        let fdet = if config.fdet_mode == FDetMode::Dlib {
+            FaceDet(Box::new(
+                fdt.unwrap()
+                    .join()
+                    // TODO: Print the panics properly instead of ignoring them
+                    .map_err(|_| anyhow::format_err!("Dlib FDet init failed!"))?,
+            ))
+        } else {
+            FaceDet(Box::new(YuNetFaceDet {}))
+        };
         let lm_pred = lmt
             .join()
             .map_err(|_| anyhow::format_err!("LMPred init failed!"))?
@@ -113,7 +124,7 @@ impl FaceRecognizer {
         let faces_file = config.faces_file();
         let encs = Faces::from_file(faces_file)?;
         Ok(Self {
-            fdet: FaceDet(Box::new(fdet)),
+            fdet,
             lm_pred,
             encoder,
             known_faces: encs,

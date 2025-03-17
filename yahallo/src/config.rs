@@ -2,6 +2,18 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Result};
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum FDetMode {
+    Dlib,
+    YuNet,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum FRcgMode {
+    Dlib,
+    SFace,
+}
+
 #[derive(Debug)]
 pub struct Config {
     camera_path: PathBuf,
@@ -13,6 +25,8 @@ pub struct Config {
     pub(crate) match_threshold: f64,
     /// maximum percent of dark pixels in frame to allow face recog
     dark_threshold: u32,
+    pub(crate) fdet_mode: FDetMode,
+    pub(crate) frcg_mode: FRcgMode,
 }
 
 impl Config {
@@ -22,6 +36,8 @@ impl Config {
         faces_file: PathBuf,
         match_threshold: f64,
         dark_threshold: u32,
+        fdet_mode: FDetMode,
+        frcg_mode: FRcgMode,
     ) -> anyhow::Result<Self> {
         if faces_file.is_dir() {
             bail!("Faces file should not be a dir!");
@@ -35,6 +51,8 @@ impl Config {
             faces_file,
             match_threshold,
             dark_threshold,
+            fdet_mode,
+            frcg_mode,
         })
     }
 

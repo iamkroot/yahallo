@@ -9,6 +9,7 @@ use dbus_crossroads::{Context, Crossroads};
 
 use anyhow::bail;
 use log::{info, warn};
+use yahallo::config::{FDetMode, FRcgMode};
 use yahallo::{camera::Cam, config::Config, process_image, FaceRecognizer};
 use yahallo::{is_dark, to_rgb, DbusResult, Error, YahalloResult};
 
@@ -26,6 +27,8 @@ impl State {
             PathBuf::from("data/faces.json"),
             0.6,
             100,
+            FDetMode::YuNet,
+            FRcgMode::Dlib,
         )?;
         let fr = FaceRecognizer::new(&config)?;
         Ok(Self {
