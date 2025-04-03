@@ -29,9 +29,33 @@ fn setup_logger() {
         .unwrap()
 }
 
+#[derive(Debug, Clone)]
+pub struct Args {
+    timeout: Option<Duration>,
+}
+
+fn parse_args(args: Vec<String>) -> Result<Args, PamError> {
+    let mut res = Args { timeout: None };
+    for arg in args {
+        if let Some(val) = arg.strip_prefix("timeout=") {
+            res.timeout = Some(Duration::from_secs(
+                val.parse().map_err(|_| PamError::OPEN_ERR)?,
+            ));
+        }
+    }
+    Ok(res)
+}
+
 impl PamServiceModule for YahalloDbus {
-    fn authenticate(pamh: Pam, _flags: PamFlags, _args: Vec<String>) -> PamError {
-        info!("starting face match");
+    fn authenticate(pamh: Pam, _flags: PamFlags, args: Vec<String>) -> PamError {
+        let args = match parse_args(args) {
+            Ok(args) => args,
+            Err(e) => return e,
+        };
+        // FIXME: Should impl dbus::arg::Append for Args
+        //  for now, just extract the timeout value, and send it 
+        let timeout = args.timeout.map_or(0, |d| d.as_secs());
+        info!("starting face match {args:?}");
         let user = match pamh.get_user(None) {
             Ok(Some(u)) => match u.to_str() {
                 Ok(s) => s.to_owned(),
@@ -54,7 +78,11 @@ impl PamServiceModule for YahalloDbus {
         const NAME: &str = "com.iamkroot.yahallo";
 
         let proxy = conn.with_proxy(NAME, "/", Duration::from_secs(30));
-        let (res,): (DbusResult,) = match proxy.method_call(NAME, "CheckMatch", (user,)) {
+        let (res,): (DbusResult,) = match proxy.method_call(
+            NAME,
+            "CheckMatch",
+            (user, timeout),
+        ) {
             Ok(r) => r,
             Err(e) => {
                 let msg = format!("Failed DBus call {e}");

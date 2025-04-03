@@ -43,7 +43,7 @@ fn check_match(
         config,
         cam_drop,
     }: &mut State,
-    (_username,): (String,),
+    (_username, timeout): (String, u64),
 ) -> YahalloResult<()> {
     if !fr.has_faces() {
         // In the future, we should check for this particular user
@@ -57,7 +57,7 @@ fn check_match(
     }
     let mut cam = Cam::start(config.camera_path())?;
     let start = Instant::now();
-    let timeout = Duration::from_secs(2);
+    let timeout = Duration::from_secs(timeout.max(2));
     loop {
         if start.elapsed() >= timeout {
             warn!("Timeout trying to detect face!");
@@ -105,7 +105,7 @@ fn main() -> anyhow::Result<()> {
     let iface_token = cr.register(NAME, |b| {
         b.method(
             "CheckMatch",
-            ("username",),
+            ("username", "timeout"),
             ("result",),
             |ctx, state, input| {
                 let m = check_match(ctx, state, input);
